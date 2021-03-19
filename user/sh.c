@@ -63,6 +63,11 @@ runcmd(struct cmd *cmd)
   struct listcmd *lcmd;
   struct pipecmd *pcmd;
   struct redircmd *rcmd;
+  int path_fd; 
+  int max_dir_length = 256;
+  char full_command[max_dir_length];
+  char c[1];
+  int index;
 
   if(cmd == 0)
     exit(1);
@@ -76,7 +81,29 @@ runcmd(struct cmd *cmd)
     if(ecmd->argv[0] == 0)
       exit(1);
     exec(ecmd->argv[0], ecmd->argv);
+
+    path_fd = open("/path", O_RDONLY | O_CREATE);
+
+    while(read(path_fd, &full_command[0], 1) == 1){
+      index = 1;
+
+      while(index < max_dir_length && read(path_fd, c, 1) == 1 && c[0] != ':'){
+        full_command[index] = c[0];
+        index ++;
+      }
+
+      for(int i = 0; index < max_dir_length && ecmd->argv[0][i] != 0; i++){
+        full_command[index] = ecmd->argv[0][i];
+         index ++;
+      }
+
+      full_command[index] = 0;
+      exec(full_command, ecmd->argv);
+    }
+  
     fprintf(2, "exec %s failed\n", ecmd->argv[0]);
+    close(path_fd);
+
     break;
 
   case REDIR:
