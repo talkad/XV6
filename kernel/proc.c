@@ -145,6 +145,12 @@ found:
   acquire(&tickslock);
   p->ctime = ticks;
   release(&tickslock);
+
+  p->ttime = 0;
+  p->stime = 0;
+  p->retime = 0;
+  p->rutime = 0;
+  p->bursttime = QUANTUM;
   
   return p;
 }
@@ -169,6 +175,11 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  // update termination time
+  acquire(&tickslock);
+  p->ttime = ticks;
+  release(&tickslock);
 }
 
 // Create a user page table for a given process,
@@ -657,5 +668,37 @@ procdump(void)
       state = "???";
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
+  }
+}
+
+// Update the time fields for each process
+void
+update_time()
+{
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    if(p != myproc()){
+      acquire(&p->lock);
+
+      if(p->state == SLEEPING){
+        p->stime ++;
+      }
+      else if(p->state == RUNNABLE){
+        p->retime ++;
+      }
+      else if(p->state == RUNNING){
+        p->rutime ++;
+      }
+
+      // A(i+1) = alpha*Bi + (1-alpha)*Ai
+      // when Ai is the approximate estimated burst time
+      // and Bi is the length of the current burst
+      uint64 Bi = p->rutime - p->retime - p->stime; // not sure about that
+      Bi = Bi > 0 ? Bi : 0;
+      p->bursttime = ALPHA*Bi + (1-ALPHA)*p->bursttime;
+
+      release(&p->lock);
+    }
   }
 }
