@@ -113,3 +113,12 @@ struct proc {
   uint64 rutime;               // The total time the process spent in the RUNNING mode
   uint64 bursttime;            // Approximate estimated burst time
 };
+
+struct perf {
+  uint64 ctime;                // Process creation time
+  uint64 ttime;                // Process termination time
+  uint64 stime;                // The total time the process spent in the SLEEPING mode
+  uint64 retime;               // The total time the process spent in the RUNNABLE mode
+  uint64 rutime;               // The total time the process spent in the RUNNING mode
+  uint64 bursttime;            // Approximate estimated burst time
+};

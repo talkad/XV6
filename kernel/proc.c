@@ -694,11 +694,37 @@ update_time()
       // A(i+1) = alpha*Bi + (1-alpha)*Ai
       // when Ai is the approximate estimated burst time
       // and Bi is the length of the current burst
-      uint64 Bi = p->rutime - p->retime - p->stime; // not sure about that
-      Bi = Bi > 0 ? Bi : 0;
-      p->bursttime = ALPHA*Bi + (1-ALPHA)*p->bursttime;
+      // uint64 Bi = p->rutime - p->retime - p->stime; // not sure about that
+      // Bi = 10; // Bi > 0 ? Bi : 0;
+      // p->bursttime = ALPHA*Bi + (1-ALPHA)*(p->bursttime);
 
       release(&p->lock);
     }
   }
+}
+
+int 
+wait_stat(int *status, struct perf *performance){
+  struct proc *np;
+  struct proc *p = myproc();
+  int pid = wait((uint64)status);
+  
+  for(np = proc; np < &proc[NPROC]; np++){
+    if(np->parent == p){
+      acquire(&np->lock);
+
+      performance->ctime = np->ctime;
+      performance->ttime = np->ttime;
+      performance->stime = np->stime;
+      performance->retime = np->retime;
+      performance->rutime = np->rutime;
+      performance->bursttime = np->bursttime;
+
+      release(&np->lock);
+
+      return pid;
+    }
+  }
+
+  return -1;
 }

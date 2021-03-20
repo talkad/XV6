@@ -95,3 +95,19 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// return the process wait status
+uint64
+sys_wait_stat(void)
+{ 
+  uint64 stat_addr;
+  uint64 perf_addr;
+
+  if(argaddr(0, &stat_addr) < 0)
+    return -1;
+
+  if(argaddr(1, &perf_addr) < 0)
+    return -1;
+
+  return wait_stat((int *)stat_addr, (struct perf *)perf_addr);
+}
