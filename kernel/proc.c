@@ -141,6 +141,11 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // update the process creation time
+  acquire(&tickslock);
+  p->ctime = ticks;
+  release(&tickslock);
+  
   return p;
 }
 
