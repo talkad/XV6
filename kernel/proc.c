@@ -6,6 +6,9 @@
 #include "proc.h"
 #include "defs.h"
 
+#include <stdarg.h>
+
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -175,11 +178,6 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
-
-  // update termination time
-  acquire(&tickslock);
-  p->ttime = ticks;
-  release(&tickslock);
 }
 
 // Create a user page table for a given process,
@@ -694,9 +692,8 @@ update_time()
       // A(i+1) = alpha*Bi + (1-alpha)*Ai
       // when Ai is the approximate estimated burst time
       // and Bi is the length of the current burst
-      // uint64 Bi = p->rutime - p->retime - p->stime; // not sure about that
-      // Bi = 10; // Bi > 0 ? Bi : 0;
-      // p->bursttime = ALPHA*Bi + (1-ALPHA)*(p->bursttime);
+      // uint64 Bi = p->rutime;
+      // p->bursttime = ALPHA*Bi; // + (1-ALPHA)*(p->bursttime); 
 
       release(&p->lock);
     }
@@ -704,27 +701,62 @@ update_time()
 }
 
 int 
-wait_stat(int *status, struct perf *performance){
+wait_stat(int *status, struct perf *performance)
+{
   struct proc *np;
+  int havekids, pid;
   struct proc *p = myproc();
-  int pid = wait((uint64)status);
-  
-  for(np = proc; np < &proc[NPROC]; np++){
-    if(np->parent == p){
-      acquire(&np->lock);
 
-      performance->ctime = np->ctime;
-      performance->ttime = np->ttime;
-      performance->stime = np->stime;
-      performance->retime = np->retime;
-      performance->rutime = np->rutime;
-      performance->bursttime = np->bursttime;
+  acquire(&wait_lock);
 
-      release(&np->lock);
+  for(;;){
+    // Scan through table looking for exited children.
+    havekids = 0;
+    for(np = proc; np < &proc[NPROC]; np++){
+      if(np->parent == p){
+        // make sure the child isn't still in exit() or swtch().
+        acquire(&np->lock);
 
-      return pid;
+        havekids = 1;
+        if(np->state == ZOMBIE){
+          // Found one.
+          pid = np->pid;
+
+          // update termination time
+          acquire(&tickslock);
+          np->ttime = ticks;
+          release(&tickslock);
+
+          if(performance != 0 && copyout(p->pagetable, (uint64)performance, (char *)&np->ctime,
+                                  sizeof(*performance)) < 0) {
+            release(&np->lock);
+            release(&wait_lock);
+            return -1;
+          }
+
+          if(status != 0 && copyout(p->pagetable, (uint64)status, (char *)&np->xstate,
+                                  sizeof(np->xstate)) < 0) {
+            release(&np->lock);
+            release(&wait_lock);
+            return -1;
+          }
+
+          freeproc(np);
+          release(&np->lock);
+          release(&wait_lock);
+          return pid;
+        }
+        release(&np->lock);
+      }
     }
-  }
 
-  return -1;
+    // No point waiting if we don't have any children.
+    if(!havekids || p->killed){
+      release(&wait_lock);
+      return -1;
+    }
+    
+    // Wait for a child to exit.
+    sleep(p, &wait_lock);  //DOC: wait-sleep
+  }
 }

@@ -12,10 +12,9 @@ struct perf {
 };
 
 
-
 int main(int argc, char** argv){
     int i;
-    struct perf* pr = malloc(sizeof(*pr));
+    struct perf *pr = malloc(sizeof(*pr));
 
     int pid = fork();
     if(pid!=0){
@@ -23,12 +22,16 @@ int main(int argc, char** argv){
         wait_stat(&status, pr);
         fprintf(2, "process status:\n creation = %d\n termination = %d\n sleeping = %d\n runable = %d\n running = %d\n bursttime = %d\n",
             pr->ctime, pr->ttime, pr->stime, pr->retime, pr->rutime, pr->bursttime);
+
+        free(pr);
     }
     else{
-        for(i=0; i<=1000; i++)
+        sleep(10);
+        for(i=0; i<=100; i++)
             fprintf(2, "PANOS\n");
+
+        sleep(10);
     }
 
-    free(pr);
     exit(0);
 }
