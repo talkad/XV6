@@ -146,14 +146,14 @@ found:
 
   // update the process creation time
   acquire(&tickslock);
-  p->ctime = ticks;
+  p->ctime = (int)ticks;
   release(&tickslock);
 
   p->ttime = 0;
   p->stime = 0;
   p->retime = 0;
   p->rutime = 0;
-  p->bursttime = QUANTUM;
+  p->bursttime = 0; //(float)QUANTUM;
   
   return p;
 }
@@ -695,6 +695,8 @@ update_time()
       // uint64 Bi = p->rutime;
       // p->bursttime = ALPHA*Bi; // + (1-ALPHA)*(p->bursttime); 
 
+      // p->bursttime =42;
+
       release(&p->lock);
     }
   }
@@ -759,4 +761,5 @@ wait_stat(int *status, struct perf *performance)
     // Wait for a child to exit.
     sleep(p, &wait_lock);  //DOC: wait-sleep
   }
+  return 0;
 }

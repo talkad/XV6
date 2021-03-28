@@ -64,10 +64,12 @@ runcmd(struct cmd *cmd)
   struct pipecmd *pcmd;
   struct redircmd *rcmd;
   int path_fd; 
-  int max_dir_length = 256;
-  char full_command[max_dir_length];
-  char c[1];
-  int index;
+  int max_path_size= 1024;
+  int path_size;
+  char path_buf[max_path_size];
+  char new_command[128];
+  int i;
+  int current_dir = 0;
 
   if(cmd == 0)
     exit(1);
@@ -82,23 +84,22 @@ runcmd(struct cmd *cmd)
       exit(1);
     exec(ecmd->argv[0], ecmd->argv);
 
-    path_fd = open("/path", O_RDONLY | O_CREATE);
+    // concat the command into each dir in path 
+    path_fd = open("/path", O_RDONLY);
+    path_size = read(path_fd, path_buf, max_path_size);
 
-    while(read(path_fd, &full_command[0], 1) == 1){
-      index = 1;
-
-      while(index < max_dir_length && read(path_fd, c, 1) == 1 && c[0] != ':'){
-        full_command[index] = c[0];
-        index ++;
+    for(i = 0; i < path_size; i++){
+      if(path_buf[i] == ':'){
+        path_buf[i] = 0;
       }
+    }
 
-      for(int i = 0; index < max_dir_length && ecmd->argv[0][i] != 0; i++){
-        full_command[index] = ecmd->argv[0][i];
-         index ++;
-      }
+    while(current_dir < path_size){
+      strcpy(new_command, path_buf + current_dir);
+      strcpy(new_command + strlen(new_command), ecmd->argv[0]);
 
-      full_command[index] = 0;
-      exec(full_command, ecmd->argv);
+      exec(new_command, ecmd->argv);
+      current_dir += strlen(path_buf + current_dir) + 1;
     }
   
     fprintf(2, "exec %s failed\n", ecmd->argv[0]);
