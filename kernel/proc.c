@@ -153,7 +153,7 @@ found:
   p->stime = 0;
   p->retime = 0;
   p->rutime = 0;
-  p->bursttime = 0; //(float)QUANTUM;
+  p->average_bursttime = QUANTUM * 100;
   
   return p;
 }
@@ -703,7 +703,7 @@ update_time()
 }
 
 int 
-wait_stat(int *status, struct perf *performance)
+wait_stat(uint64 status, uint64 performance)
 {
   struct proc *np;
   int havekids, pid;
@@ -730,7 +730,7 @@ wait_stat(int *status, struct perf *performance)
           release(&tickslock);
 
           if(performance != 0 && copyout(p->pagetable, (uint64)performance, (char *)&np->ctime,
-                                  sizeof(*performance)) < 0) {
+                                  sizeof(*(struct perf*)performance)) < 0) {
             release(&np->lock);
             release(&wait_lock);
             return -1;

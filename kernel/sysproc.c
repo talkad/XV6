@@ -109,5 +109,5 @@ sys_wait_stat(void)
   if(argaddr(1, &perf_addr) < 0)
     return -1;
 
-  return wait_stat((int *)stat_addr, (struct perf *)perf_addr);
+  return wait_stat(stat_addr, perf_addr);
 }

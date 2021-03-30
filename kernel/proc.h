@@ -111,7 +111,7 @@ struct proc {
   int stime;                  // The total time the process spent in the SLEEPING mode
   int retime;                 // The total time the process spent in the RUNNABLE mode
   int rutime;                 // The total time the process spent in the RUNNING mode
-  float bursttime;            // Approximate estimated burst time
+  int average_bursttime;      // Approximate estimated burst time
 };
 
 struct perf {
@@ -120,5 +120,5 @@ struct perf {
   int stime;                  // The total time the process spent in the SLEEPING mode
   int retime;                 // The total time the process spent in the RUNNABLE mode
   int rutime;                 // The total time the process spent in the RUNNING mode
-  float bursttime;            // Approximate estimated burst time
+  int average_bursttime;      // Average of bursttimes in 100ths (so average * 100)
 };

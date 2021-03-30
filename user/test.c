@@ -8,7 +8,7 @@ struct perf {
   int stime;                // The total time the process spent in the SLEEPING mode
   int retime;               // The total time the process spent in the RUNNABLE mode
   int rutime;               // The total time the process spent in the RUNNING mode
-  float bursttime;            // Approximate estimated burst time
+  int average_bursttime;    // Approximate estimated burst time
 };
 
 
@@ -20,8 +20,8 @@ int main(int argc, char** argv){
     if(pid!=0){
         int status;
         wait_stat(&status, pr);
-        fprintf(2, "process status:\n creation = %d\n termination = %d\n sleeping = %d\n runable = %d\n running = %d \n,  burst = %f \n",
-            pr->ctime, pr->ttime, pr->stime, pr->retime, pr->rutime, pr->bursttime);
+        fprintf(2, "process status:\n creation = %d\n termination = %d\n sleeping = %d\n runable = %d\n running = %d \n,  burst = %d \n",
+            pr->ctime, pr->ttime, pr->stime, pr->retime, pr->rutime, pr->average_bursttime);
 
         free(pr);
     }
