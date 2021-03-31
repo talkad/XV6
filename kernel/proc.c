@@ -154,7 +154,10 @@ found:
   p->retime = 0;
   p->rutime = 0;
   p->average_bursttime = QUANTUM * 100;
-  
+
+  p->current_bursttime = 0;
+  p->priority = NORMAL;
+
   return p;
 }
 
@@ -317,6 +320,8 @@ fork(void)
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
+  // the child proccess has the priority of the father
+  np->priority = p->priority;
   pid = np->pid;
 
   release(&np->lock);
@@ -459,8 +464,11 @@ scheduler(void)
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
+    #ifdef DEFAULT
+
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
+
       if(p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
@@ -473,8 +481,115 @@ scheduler(void)
         // It should have changed its p->state before coming back.
         c->proc = 0;
       }
+
       release(&p->lock);
     }
+
+    #else
+    #ifdef FCFS
+
+    struct proc *fc_p = 0;
+
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+
+      if(p->state == RUNNABLE) {
+        if(!fc_p){
+          fc_p = p;
+        }
+        else if(p->ctime < fc_p->ctime){
+          fc_p = p;
+        }
+      }
+      release(&p->lock);
+    }
+
+    if(!fc_p){
+      p = fc_p;
+
+      acquire(&p->lock);
+      p->state = RUNNING;
+      c->proc = p;
+      swtch(&c->context, &p->context);
+
+      c->proc = 0;
+      release(&p->lock);
+    }
+
+    #else
+    #ifdef SRT
+
+    struct proc *srt_p = 0;
+
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+
+      if(p->state == RUNNABLE) {
+        if(!fc_p){
+          srt_p = p;
+        }
+        else if(p->average_bursttime < fc_p->average_bursttime){
+          srt_p = p;
+        }
+      }
+      release(&p->lock);
+    }
+
+    if(!srt_p){
+      p = srt_p;
+
+      acquire(&p->lock);
+      p->state = RUNNING;
+      c->proc = p;
+      swtch(&c->context, &p->context);
+
+      c->proc = 0;
+      release(&p->lock);
+    }
+
+    #else
+    #ifdef CFSD
+
+    struct proc *cfsd_p = 0;
+    int p_ratio = 0;
+    int acc_ratio = 0;
+
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+
+      if(p->state == RUNNABLE) {
+
+        p_ratio = (p->rutime * p->priority)/(p->rutime + p->stime);
+
+        if(!cfsd_p){
+          cfsd_p = p;
+          acc_ratio = p_ratio;
+        }
+        else if(p_ratio < acc_ratio){
+          cfsd_p = p;
+          acc_ratio = p_ratio;
+        }
+      }
+      release(&p->lock);
+    }
+
+    if(!cfsd_p){
+      p = cfsd_p;
+
+      acquire(&p->lock);
+      p->state = RUNNING;
+      c->proc = p;
+      swtch(&c->context, &p->context);
+
+      c->proc = 0;
+      release(&p->lock);
+    }
+
+    #endif
+    #endif
+    #endif
+    #endif
+
   }
 }
 
@@ -511,6 +626,11 @@ yield(void)
 {
   struct proc *p = myproc();
   acquire(&p->lock);
+
+  // update approximated burst time when proccess is yield
+  p->average_bursttime = ALPHA * p->current_bursttime + ((100 - ALPHA)* p->average_bursttime)/100;
+  p->current_bursttime = 0;
+
   p->state = RUNNABLE;
   sched();
   release(&p->lock);
@@ -552,6 +672,11 @@ sleep(void *chan, struct spinlock *lk)
   // so it's okay to release lk.
 
   acquire(&p->lock);  //DOC: sleeplock1
+
+  // update approximated burst time when proccess is blocked
+  p->average_bursttime = ALPHA * p->current_bursttime + ((100 - ALPHA)* p->average_bursttime)/100;
+  p->current_bursttime = 0;
+
   release(lk);
 
   // Go to sleep.
@@ -687,15 +812,8 @@ update_time()
       }
       else if(p->state == RUNNING){
         p->rutime ++;
+        p->current_bursttime ++;
       }
-
-      // A(i+1) = alpha*Bi + (1-alpha)*Ai
-      // when Ai is the approximate estimated burst time
-      // and Bi is the length of the current burst
-      // uint64 Bi = p->rutime;
-      // p->bursttime = ALPHA*Bi; // + (1-ALPHA)*(p->bursttime); 
-
-      // p->bursttime =42;
 
       release(&p->lock);
     }
@@ -762,4 +880,43 @@ wait_stat(uint64 status, uint64 performance)
     sleep(p, &wait_lock);  //DOC: wait-sleep
   }
   return 0;
+}
+
+int 
+set_priority(int priority)
+{
+  struct proc *p = myproc();
+  int result = 0;
+
+  acquire(&p->lock);
+
+  switch (priority)
+  {
+    case 1:
+      p->priority = TEST_HIGH;
+      break;
+
+    case 2:
+      p->priority = HIGH;
+      break;
+
+    case 3:
+      p->priority = NORMAL;
+      break;
+
+    case 4:
+      p->priority = LOW;
+      break;
+
+    case 5:
+      p->priority = TEST_LOW;
+      break; 
+      
+    default:
+      result = -1;
+      break;
+  }
+
+  release(&p->lock);
+  return result;
 }

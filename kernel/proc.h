@@ -82,6 +82,12 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+enum priority  {TEST_HIGH = 1,
+                HIGH = 3,
+                NORMAL = 5,
+                LOW = 7,
+                TEST_LOW = 25};
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -112,6 +118,9 @@ struct proc {
   int retime;                 // The total time the process spent in the RUNNABLE mode
   int rutime;                 // The total time the process spent in the RUNNING mode
   int average_bursttime;      // Approximate estimated burst time
+
+  int current_bursttime;      // Last burst time on cpu 
+  enum priority priority;     // The process priority
 };
 
 struct perf {
