@@ -320,6 +320,9 @@ fork(void)
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
+  // the child copies the mask of the parent
+  np->mask = p->mask;
+
   // the child proccess has the priority of the father
   np->priority = p->priority;
   pid = np->pid;
@@ -333,7 +336,7 @@ fork(void)
   acquire(&np->lock);
   np->state = RUNNABLE;
   release(&np->lock);
-
+  
   return pid;
 }
 
@@ -818,6 +821,23 @@ update_time()
       release(&p->lock);
     }
   }
+}
+
+int
+trace(int mask, int pid){
+  if(mask<= 0 || pid <= 0)
+    return -1;
+
+  struct proc *p;
+
+  for(p = proc; p< &proc[NPROC]; p++){
+    if(p->pid == pid){
+      p->mask = mask;
+      return 0;
+    }
+  }
+
+  return -1;  
 }
 
 int 

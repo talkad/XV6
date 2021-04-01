@@ -111,7 +111,7 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-
+  int mask;
   int ctime;                  // Process creation time
   int ttime;                  // Process termination time
   int stime;                  // The total time the process spent in the SLEEPING mode

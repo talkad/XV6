@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "syscall.h"
 
 uint64
 sys_exit(void)
@@ -26,7 +27,10 @@ sys_getpid(void)
 uint64
 sys_fork(void)
 {
-  return fork();
+  int fork_res = fork();
+  if((myproc()->mask | 1 << SYS_fork) == myproc()->mask)
+    printf("%d: syscall fork NULL -> %d", myproc()->pid, fork_res);
+  return fork_res;
 }
 
 uint64
@@ -47,8 +51,16 @@ sys_sbrk(void)
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-  if(growproc(n) < 0)
+  
+  if(growproc(n) < 0){
+      if((myproc()->mask | 1 << SYS_sbrk) == myproc()->mask)
+        printf("%d: syscall sbrk %lu -> %d", myproc()->pid, n, -1);
     return -1;
+  }
+
+  if((myproc()->mask | 1 << SYS_sbrk) == myproc()->mask)
+    printf("%d: syscall sbrk %lu -> %d", myproc()->pid, n, 0);
+
   return addr;
 }
 
@@ -80,7 +92,13 @@ sys_kill(void)
 
   if(argint(0, &pid) < 0)
     return -1;
-  return kill(pid);
+
+  int kill_res = kill(pid);
+
+  if((myproc()->mask | 1 << SYS_kill) == myproc()->mask)
+    printf("%d: syscall kill %d -> %d", myproc()->pid, pid, kill_res);
+
+  return kill_res;
 }
 
 // return how many clock tick interrupts have occurred
@@ -94,6 +112,21 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_trace(void)
+{
+  int mask;
+  int pid;
+
+  if(argaddr(0, &mask) < 0)
+    return -1;
+
+  if(argaddr(1, &pid) < 0)
+    return -1;
+
+  return trace(mask, pid);  
 }
 
 // return the process wait status
