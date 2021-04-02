@@ -29,7 +29,7 @@ sys_fork(void)
 {
   int fork_res = fork();
   if((myproc()->mask | 1 << SYS_fork) == myproc()->mask)
-    printf("%d: syscall fork NULL -> %d", myproc()->pid, fork_res);
+    printf("%d: syscall fork NULL -> %d\n", myproc()->pid, fork_res);
   return fork_res;
 }
 
@@ -54,12 +54,12 @@ sys_sbrk(void)
   
   if(growproc(n) < 0){
       if((myproc()->mask | 1 << SYS_sbrk) == myproc()->mask)
-        printf("%d: syscall sbrk %lu -> %d", myproc()->pid, n, -1);
+        printf("%d: syscall sbrk %lu -> %d\n", myproc()->pid, n, -1);
     return -1;
   }
 
   if((myproc()->mask | 1 << SYS_sbrk) == myproc()->mask)
-    printf("%d: syscall sbrk %lu -> %d", myproc()->pid, n, 0);
+    printf("%d: syscall sbrk %lu -> %d\n", myproc()->pid, n, 0);
 
   return addr;
 }
@@ -96,7 +96,7 @@ sys_kill(void)
   int kill_res = kill(pid);
 
   if((myproc()->mask | 1 << SYS_kill) == myproc()->mask)
-    printf("%d: syscall kill %d -> %d", myproc()->pid, pid, kill_res);
+    printf("%d: syscall kill %d -> %d\n", myproc()->pid, pid, kill_res);
 
   return kill_res;
 }

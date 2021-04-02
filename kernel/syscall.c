@@ -175,7 +175,7 @@ syscall(void)
     p->trapframe->a0 = syscalls[num]();
     if(num != SYS_fork && num != SYS_sbrk && num != SYS_kill){
       if((p->mask | 1 << num) == p->mask)
-        printf("%d: syscall %s  -> %lu", p->pid, syscallnames[num], p->trapframe->a0);
+        printf("%d: syscall %s  -> %lu\n", p->pid, syscallnames[num], p->trapframe->a0);
     }
   } else {
     printf("%d %s: unknown sys call %d\n",

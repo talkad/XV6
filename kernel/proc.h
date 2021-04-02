@@ -121,6 +121,7 @@ struct proc {
 
   int current_bursttime;      // Last burst time on cpu 
   enum priority priority;     // The process priority
+  int runnabletime;           // The time a proccess become runnable
 };
 
 struct perf {
