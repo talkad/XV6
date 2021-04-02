@@ -528,10 +528,10 @@ scheduler(void)
       acquire(&p->lock);
 
       if(p->state == RUNNABLE) {
-        if(!fc_p){
+        if(!srt_p){
           srt_p = p;
         }
-        else if(p->average_bursttime < fc_p->average_bursttime){
+        else if(p->average_bursttime < srt_p->average_bursttime){
           srt_p = p;
         }
       }

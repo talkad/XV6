@@ -120,10 +120,10 @@ sys_trace(void)
   int mask;
   int pid;
 
-  if(argaddr(0, &mask) < 0)
+  if(argint(0, &mask) < 0)
     return -1;
 
-  if(argaddr(1, &pid) < 0)
+  if(argint(1, &pid) < 0)
     return -1;
 
   return trace(mask, pid);  
