@@ -504,6 +504,8 @@ scheduler(void)
   for(;;){
     intr_on();
 
+    fc_p = 0;
+    
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
 
@@ -522,12 +524,119 @@ scheduler(void)
 
       acquire(&fc_p->lock);
 
-      fc_p->state = RUNNING;
-      c->proc = fc_p;
-      swtch(&c->context, &fc_p->context);
+      if(fc_p->state == RUNNABLE){
 
-      c->proc = 0;
+        fc_p->state = RUNNING;
+        c->proc = fc_p;
+        swtch(&c->context, &fc_p->context);
+        c->proc = 0;
+      }
+      
       release(&fc_p->lock);
+    }
+  }
+}
+#endif
+
+
+#ifdef SRT
+void
+scheduler(void)
+{
+  struct proc *p;
+  struct cpu *c = mycpu();
+  struct proc *srt_p;
+  
+  c->proc = 0;
+  for(;;){
+    intr_on();
+
+    srt_p = 0;
+
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+
+      if(p->state == RUNNABLE) {
+        if(!srt_p){
+          srt_p = p;
+        }
+        else if(p->average_bursttime < srt_p->average_bursttime){
+          srt_p = p;
+        }
+      }
+      release(&p->lock);
+    }
+
+    if(srt_p != 0){
+      p = srt_p;
+
+      acquire(&p->lock);
+
+      if(p->state == RUNNABLE){
+        p->state = RUNNING;
+        c->proc = p;
+        swtch(&c->context, &p->context);
+
+        c->proc = 0;
+      }
+      release(&p->lock);
+    }
+  }
+}
+#endif
+
+
+#ifdef CFSD
+void
+scheduler(void)
+{
+  struct proc *p;
+  struct cpu *c = mycpu();
+  struct proc *cfsd_p;
+  int p_ratio;
+  int acc_ratio;
+  
+  c->proc = 0;
+  for(;;){
+    // Avoid deadlock by ensuring that devices can interrupt.
+    intr_on();
+
+    cfsd_p = 0;
+    p_ratio = 0;
+    acc_ratio = 0;
+
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+
+      if(p->state == RUNNABLE) {
+
+        p_ratio = (p->rutime * p->priority)/(p->rutime + p->stime);
+
+        if(!cfsd_p){
+          cfsd_p = p;
+          acc_ratio = p_ratio;
+        }
+        else if(p_ratio < acc_ratio){
+          cfsd_p = p;
+          acc_ratio = p_ratio;
+        }
+      }
+      release(&p->lock);
+    }
+
+    if(cfsd_p != 0){
+      p = cfsd_p;
+
+      acquire(&p->lock);
+
+      if(p->state == RUNNABLE){
+        p->state = RUNNING;
+        c->proc = p;
+        swtch(&c->context, &p->context);
+
+        c->proc = 0;
+      }
+      release(&p->lock);
     }
   }
 }
@@ -715,6 +824,11 @@ void
 yield(void)
 {
   struct proc *p = myproc();
+  int time;
+  acquire(&tickslock);
+  time = (int)ticks;
+  release(&tickslock);
+
   acquire(&p->lock);
 
   // update approximated burst time when proccess is yield
@@ -722,10 +836,7 @@ yield(void)
   p->current_bursttime = 0;
 
   p->state = RUNNABLE;
-
-  acquire(&tickslock);
-  p->runnabletime = (int)ticks;
-  release(&tickslock);
+  p->runnabletime = time;
 
   sched();
   release(&p->lock);
@@ -800,11 +911,7 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
-
-        acquire(&tickslock);
         p->runnabletime = (int)ticks;
-        release(&tickslock);
-
       }
       release(&p->lock);
     }
@@ -943,6 +1050,11 @@ wait_stat(uint64 status, uint64 performance)
   struct proc *np;
   int havekids, pid;
   struct proc *p = myproc();
+  int time;
+
+  acquire(&tickslock);
+  time = ticks;
+  release(&tickslock);
 
   acquire(&wait_lock);
 
@@ -959,10 +1071,7 @@ wait_stat(uint64 status, uint64 performance)
           // Found one.
           pid = np->pid;
 
-          // update termination time
-          acquire(&tickslock);
-          np->ttime = ticks;
-          release(&tickslock);
+          np->ttime = time;
 
           if(performance != 0 && copyout(p->pagetable, (uint64)performance, (char *)&np->ctime,
                                   sizeof(*(struct perf*)performance)) < 0) {

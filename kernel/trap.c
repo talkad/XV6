@@ -38,6 +38,14 @@ usertrap(void)
 {
   int which_dev = 0;
 
+  #ifndef FCFS
+  int time;
+
+  acquire(&tickslock);
+  time = (int)ticks;
+  release(&tickslock);
+  #endif
+
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
 
@@ -76,9 +84,15 @@ usertrap(void)
   if(p->killed)
     exit(-1);
 
+
+  #ifdef FCFS
+  // do not yield
+  #else
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2 && time % QUANTUM == 0) // timeintr every QUANTUM ticks
     yield();
+  #endif
+  
 
   usertrapret();
 }
@@ -137,6 +151,14 @@ kerneltrap()
   uint64 sepc = r_sepc();
   uint64 sstatus = r_sstatus();
   uint64 scause = r_scause();
+
+  #ifndef FCFS
+  int time;
+
+  acquire(&tickslock);
+  time = (int)ticks;
+  release(&tickslock);
+  #endif
   
   if((sstatus & SSTATUS_SPP) == 0)
     panic("kerneltrap: not from supervisor mode");
@@ -149,9 +171,13 @@ kerneltrap()
     panic("kerneltrap");
   }
 
+  #ifdef FCFS
+  // do not yield
+  #else
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
+  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING && time % QUANTUM == 0) // timeintr every QUANTUM ticks
     yield();
+  #endif
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
