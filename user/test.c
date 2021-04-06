@@ -20,7 +20,7 @@ int main(int argc, char** argv){
     if(pid!=0){
         int status;
         wait_stat(&status, pr);
-        fprintf(2, "process status:\n creation = %d\n termination = %d\n sleeping = %d\n runable = %d\n running = %d \n,  burst = %d \n",
+        fprintf(2, "process status:\n creation = %d\n termination = %d\n sleeping = %d\n runnable = %d\n running = %d \n  burst = %d \n",
             pr->ctime, pr->ttime, pr->stime, pr->retime, pr->rutime, pr->average_bursttime);
 
         free(pr);

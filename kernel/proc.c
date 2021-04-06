@@ -643,154 +643,6 @@ scheduler(void)
 #endif
 
 
-// // Per-CPU process scheduler.
-// // Each CPU calls scheduler() after setting itself up.
-// // Scheduler never returns.  It loops, doing:
-// //  - choose a process to run.
-// //  - swtch to start running that process.
-// //  - eventually that process transfers control
-// //    via swtch back to the scheduler.
-// void
-// scheduler(void)
-// {
-//   struct proc *p;
-//   struct cpu *c = mycpu();
-  
-//   c->proc = 0;
-//   for(;;){
-//     // Avoid deadlock by ensuring that devices can interrupt.
-//     intr_on();
-
-//     #ifdef DEFAULT
-
-//     for(p = proc; p < &proc[NPROC]; p++) {
-//       acquire(&p->lock);
-
-//       if(p->state == RUNNABLE) {
-//         // Switch to chosen process.  It is the process's job
-//         // to release its lock and then reacquire it
-//         // before jumping back to us.
-//         p->state = RUNNING;
-//         c->proc = p;
-//         swtch(&c->context, &p->context);
-
-//         // Process is done running for now.
-//         // It should have changed its p->state before coming back.
-//         c->proc = 0;
-//       }
-
-//       release(&p->lock);
-//     }
-
-//     #else
-
-//     #ifdef FCFS
-
-//     struct proc *fc_p = proc;
-
-//     for(p = proc; p < &proc[NPROC]; p++) {
-//       acquire(&p->lock);
-
-//       if(p->state == RUNNABLE) {
-//         if(!fc_p){
-//           fc_p = p;
-//         }
-//         else if(p->ctime < fc_p->ctime){
-//           fc_p = p;
-//         }
-//       }
-//       release(&p->lock);
-//     }
-
-//     acquire(&fc_p->lock);
-//     if(fc_p->state == RUNNABLE){
-
-//       fc_p->state = RUNNING;
-//       c->proc = fc_p;
-//       swtch(&c->context, &fc_p->context);
-
-//       c->proc = 0;
-//     }
-//     release(&fc_p->lock);
-
-//     #else
-
-//     #ifdef SRT
-
-//     struct proc *srt_p = 0;
-
-//     for(p = proc; p < &proc[NPROC]; p++) {
-//       acquire(&p->lock);
-
-//       if(p->state == RUNNABLE) {
-//         if(!srt_p){
-//           srt_p = p;
-//         }
-//         else if(p->average_bursttime < srt_p->average_bursttime){
-//           srt_p = p;
-//         }
-//       }
-//       release(&p->lock);
-//     }
-
-//     if(srt_p){
-//       p = srt_p;
-
-//       acquire(&p->lock);
-//       p->state = RUNNING;
-//       c->proc = p;
-//       swtch(&c->context, &p->context);
-
-//       c->proc = 0;
-//       release(&p->lock);
-//     }
-
-//     #else
-    
-//     #ifdef CFSD
-
-//     struct proc *cfsd_p = 0;
-//     int p_ratio = 0;
-//     int acc_ratio = 0;
-
-//     for(p = proc; p < &proc[NPROC]; p++) {
-//       acquire(&p->lock);
-
-//       if(p->state == RUNNABLE) {
-
-//         p_ratio = (p->rutime * p->priority)/(p->rutime + p->stime);
-
-//         if(!cfsd_p){
-//           cfsd_p = p;
-//           acc_ratio = p_ratio;
-//         }
-//         else if(p_ratio < acc_ratio){
-//           cfsd_p = p;
-//           acc_ratio = p_ratio;
-//         }
-//       }
-//       release(&p->lock);
-//     }
-
-//     if(!cfsd_p){
-//       p = cfsd_p;
-
-//       acquire(&p->lock);
-//       p->state = RUNNING;
-//       c->proc = p;
-//       swtch(&c->context, &p->context);
-
-//       c->proc = 0;
-//       release(&p->lock);
-//     }
-
-//     #endif
-//     #endif
-//     #endif
-//     #endif
-
-//   }
-// }
 
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
@@ -1052,9 +904,9 @@ wait_stat(uint64 status, uint64 performance)
   struct proc *p = myproc();
   int time;
 
-  acquire(&tickslock);
-  time = ticks;
-  release(&tickslock);
+  // acquire(&tickslock);
+  // time = ticks;
+  // release(&tickslock);
 
   acquire(&wait_lock);
 
@@ -1063,6 +915,11 @@ wait_stat(uint64 status, uint64 performance)
     havekids = 0;
     for(np = proc; np < &proc[NPROC]; np++){
       if(np->parent == p){
+
+        acquire(&tickslock);
+        time = ticks;
+        release(&tickslock);
+
         // make sure the child isn't still in exit() or swtch().
         acquire(&np->lock);
 
