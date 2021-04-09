@@ -323,7 +323,6 @@ fork(void)
   np->mask = p->mask;
 
   // the child proccess has the priority of the father
-  np->priority = p->priority;
   pid = np->pid;
 
   release(&np->lock);
@@ -331,6 +330,10 @@ fork(void)
   acquire(&wait_lock);
   np->parent = p;
   release(&wait_lock);
+
+  acquire(&np->lock);
+  np->priority = p->priority;
+  release(&np->lock);
 
   acquire(&np->lock);
   np->state = RUNNABLE;
