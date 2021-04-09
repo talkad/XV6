@@ -27,10 +27,7 @@ sys_getpid(void)
 uint64
 sys_fork(void)
 {
-  int fork_res = fork();
-  if((myproc()->mask | 1 << SYS_fork) == myproc()->mask)
-    printf("%d: syscall fork NULL -> %d\n", myproc()->pid, fork_res);
-  return fork_res;
+  return fork();
 }
 
 uint64
@@ -52,15 +49,8 @@ sys_sbrk(void)
     return -1;
   addr = myproc()->sz;
   
-  if(growproc(n) < 0){
-      if((myproc()->mask | 1 << SYS_sbrk) == myproc()->mask)
-        printf("%d: syscall sbrk %lu -> %d\n", myproc()->pid, n, -1);
+  if(growproc(n) < 0)
     return -1;
-  }
-
-  if((myproc()->mask | 1 << SYS_sbrk) == myproc()->mask)
-    printf("%d: syscall sbrk %lu -> %d\n", myproc()->pid, n, 0);
-
   return addr;
 }
 
@@ -93,12 +83,7 @@ sys_kill(void)
   if(argint(0, &pid) < 0)
     return -1;
 
-  int kill_res = kill(pid);
-
-  if((myproc()->mask | 1 << SYS_kill) == myproc()->mask)
-    printf("%d: syscall kill %d -> %d\n", myproc()->pid, pid, kill_res);
-
-  return kill_res;
+  return kill(pid);
 }
 
 // return how many clock tick interrupts have occurred

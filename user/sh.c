@@ -85,7 +85,7 @@ runcmd(struct cmd *cmd)
     exec(ecmd->argv[0], ecmd->argv);
 
     // concat the command into each dir in path 
-    path_fd = open("/path", O_RDONLY);
+    path_fd = open("/path", O_RDONLY | O_CREATE);
     path_size = read(path_fd, path_buf, max_path_size);
 
     for(i = 0; i < path_size; i++){

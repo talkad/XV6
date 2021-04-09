@@ -145,6 +145,8 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  p->mask = (1 << SYS_fork) | (1 << SYS_write);
+
   // update the process creation time
   p->ctime = (int)ticks;
   p->runnabletime = (int)ticks;

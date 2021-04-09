@@ -152,13 +152,13 @@ kerneltrap()
   uint64 sstatus = r_sstatus();
   uint64 scause = r_scause();
 
-  // #ifndef FCFS
-  // int time;
+  #ifndef FCFS
+  int time;
 
-  // acquire(&tickslock);
-  // time = (int)ticks;
-  // release(&tickslock);
-  // #endif
+  acquire(&tickslock);
+  time = (int)ticks;
+  release(&tickslock);
+  #endif
   
   if((sstatus & SSTATUS_SPP) == 0)
     panic("kerneltrap: not from supervisor mode");
@@ -175,8 +175,7 @@ kerneltrap()
   // do not yield
   #else
   // give up the CPU if this is a timer interrupt.
-  // if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING && time % QUANTUM == 0) // timeintr every QUANTUM ticks
-  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING) // timeintr every QUANTUM ticks
+  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING && time % QUANTUM == 0) // timeintr every QUANTUM ticks
     yield();
   #endif
 

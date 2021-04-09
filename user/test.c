@@ -28,7 +28,7 @@ int main(int argc, char** argv){
     else{
         sleep(10);
         for(i=0; i<=100; i++)
-            fprintf(2, "PANOS\n");
+            fprintf(2, "TEST\n");
 
         sleep(10);
     }
