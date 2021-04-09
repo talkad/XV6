@@ -146,10 +146,8 @@ found:
   p->context.sp = p->kstack + PGSIZE;
 
   // update the process creation time
-  acquire(&tickslock);
   p->ctime = (int)ticks;
   p->runnabletime = (int)ticks;
-  release(&tickslock);
 
   p->ttime = 0;
   p->stime = 0;
@@ -159,7 +157,6 @@ found:
 
   p->current_bursttime = 0;
   p->priority = NORMAL;
-
   return p;
 }
 
@@ -903,10 +900,6 @@ wait_stat(uint64 status, uint64 performance)
   int havekids, pid;
   struct proc *p = myproc();
   int time;
-
-  // acquire(&tickslock);
-  // time = ticks;
-  // release(&tickslock);
 
   acquire(&wait_lock);
 
