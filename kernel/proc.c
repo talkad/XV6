@@ -611,6 +611,10 @@ scheduler(void)
       if(p->state == RUNNABLE) {
 
         p_ratio = (p->rutime * p->priority)/(p->rutime + p->stime);
+        // printf("p_ratio: %d\n", p_ratio);
+        // printf("priority: %d\n", p->priority);
+        // printf("rutime: %d\n", p->rutime);
+        // printf("stime: %d\n", p->stime);
 
         if(!cfsd_p){
           cfsd_p = p;
@@ -632,8 +636,9 @@ scheduler(void)
       if(p->state == RUNNABLE){
         p->state = RUNNING;
         c->proc = p;
+        int run = ticks;
         swtch(&c->context, &p->context);
-
+        p->rutime += ticks-run;
         c->proc = 0;
       }
       release(&p->lock);

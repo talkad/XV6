@@ -1,0 +1,921 @@
+diff --git a/Makefile b/Makefile
+index 328f9c6..a1b5fee 100644
+--- a/Makefile
++++ b/Makefile
+@@ -48,6 +48,10 @@ TOOLPREFIX := $(shell if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big'
+ 	echo "***" 1>&2; exit 1; fi)
+ endif
+ 
++ifndef SCHEDFLAG
++SCHEDFLAG := DEFAULT
++endif
++
+ QEMU = qemu-system-riscv64
+ 
+ CC = $(TOOLPREFIX)gcc
+@@ -62,6 +66,7 @@ CFLAGS += -mcmodel=medany
+ CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax
+ CFLAGS += -I.
+ CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
++CFLAGS += -D $(SCHEDFLAG)
+ 
+ # Disable PIE when possible (for Ubuntu 16.10 toolchain)
+ ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]no-pie'),)
+@@ -132,9 +137,10 @@ UPROGS=\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
++	$U/_test\
+ 
+-fs.img: mkfs/mkfs README $(UPROGS)
+-	mkfs/mkfs fs.img README $(UPROGS)
++fs.img: mkfs/mkfs README path $(UPROGS)
++	mkfs/mkfs fs.img README path $(UPROGS)
+ 
+ -include kernel/*.d user/*.d
+ 
+diff --git a/kernel/defs.h b/kernel/defs.h
+index 41098f4..e3ca444 100644
+--- a/kernel/defs.h
++++ b/kernel/defs.h
+@@ -8,6 +8,7 @@ struct spinlock;
+ struct sleeplock;
+ struct stat;
+ struct superblock;
++struct perf;
+ 
+ // bio.c
+ void            binit(void);
+@@ -101,10 +102,14 @@ void            sleep(void*, struct spinlock*);
+ void            userinit(void);
+ int             wait(uint64);
+ void            wakeup(void*);
++void            update_time();
+ void            yield(void);
+ int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
+ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
+ void            procdump(void);
++int             trace(int, int);
++int             wait_stat(uint64 status, uint64 performance);
++int             set_priority(int);
+ 
+ // swtch.S
+ void            swtch(struct context*, struct context*);
+diff --git a/kernel/param.h b/kernel/param.h
+index b5fdcb2..93efc88 100644
+--- a/kernel/param.h
++++ b/kernel/param.h
+@@ -11,3 +11,5 @@
+ #define NBUF         (MAXOPBLOCKS*3)  // size of disk block cache
+ #define FSSIZE       1000  // size of file system in blocks
+ #define MAXPATH      128   // maximum file path name
++#define QUANTUM      5     // time quantum for each running process
++#define ALPHA        50    // alpha parameter for estimated burst time
+diff --git a/kernel/proc.c b/kernel/proc.c
+index 22e7ce4..215d3f4 100644
+--- a/kernel/proc.c
++++ b/kernel/proc.c
+@@ -5,6 +5,10 @@
+ #include "spinlock.h"
+ #include "proc.h"
+ #include "defs.h"
++#include "syscall.h"
++
++#include <stdarg.h>
++
+ 
+ struct cpu cpus[NCPU];
+ 
+@@ -141,6 +145,18 @@ found:
+   p->context.ra = (uint64)forkret;
+   p->context.sp = p->kstack + PGSIZE;
+ 
++  // update the process creation time
++  p->ctime = (int)ticks;
++  p->runnabletime = (int)ticks;
++  
++  p->ttime = 0;
++  p->stime = 0;
++  p->retime = 0;
++  p->rutime = 0;
++  p->average_bursttime = QUANTUM * 100;
++
++  p->current_bursttime = 0;
++  p->priority = NORMAL;
+   return p;
+ }
+ 
+@@ -303,6 +319,10 @@ fork(void)
+ 
+   safestrcpy(np->name, p->name, sizeof(p->name));
+ 
++  // the child copies the mask of the parent
++  np->mask = p->mask;
++
++  // the child proccess has the priority of the father
+   pid = np->pid;
+ 
+   release(&np->lock);
+@@ -312,9 +332,13 @@ fork(void)
+   release(&wait_lock);
+ 
+   acquire(&np->lock);
+-  np->state = RUNNABLE;
++  np->priority = p->priority;
+   release(&np->lock);
+ 
++  acquire(&np->lock);
++  np->state = RUNNABLE;
++  release(&np->lock);
++  
+   return pid;
+ }
+ 
+@@ -427,6 +451,7 @@ wait(uint64 addr)
+   }
+ }
+ 
++
+ // Per-CPU process scheduler.
+ // Each CPU calls scheduler() after setting itself up.
+ // Scheduler never returns.  It loops, doing:
+@@ -434,6 +459,7 @@ wait(uint64 addr)
+ //  - swtch to start running that process.
+ //  - eventually that process transfers control
+ //    via swtch back to the scheduler.
++#ifdef DEFAULT
+ void
+ scheduler(void)
+ {
+@@ -463,6 +489,160 @@ scheduler(void)
+     }
+   }
+ }
++#endif
++
++
++#ifdef FCFS
++void
++scheduler(void)
++{
++  struct proc *p;
++  struct cpu *c = mycpu();
++  struct proc *fc_p = 0;
++  
++  c->proc = 0;
++  for(;;){
++    intr_on();
++
++    fc_p = 0;
++    
++    for(p = proc; p < &proc[NPROC]; p++) {
++      acquire(&p->lock);
++
++      if(p->state == RUNNABLE) {
++        if(fc_p == 0){
++          fc_p = p;
++        }
++        else if(p->runnabletime < fc_p->runnabletime){
++          fc_p = p;
++        }
++      }
++      release(&p->lock);
++    }
++
++    if(fc_p != 0){
++
++      acquire(&fc_p->lock);
++
++      if(fc_p->state == RUNNABLE){
++
++        fc_p->state = RUNNING;
++        c->proc = fc_p;
++        swtch(&c->context, &fc_p->context);
++        c->proc = 0;
++      }
++      
++      release(&fc_p->lock);
++    }
++  }
++}
++#endif
++
++
++#ifdef SRT
++void
++scheduler(void)
++{
++  struct proc *p;
++  struct cpu *c = mycpu();
++  struct proc *srt_p;
++  
++  c->proc = 0;
++  for(;;){
++    intr_on();
++
++    srt_p = 0;
++
++    for(p = proc; p < &proc[NPROC]; p++) {
++      acquire(&p->lock);
++
++      if(p->state == RUNNABLE) {
++        if(!srt_p){
++          srt_p = p;
++        }
++        else if(p->average_bursttime < srt_p->average_bursttime){
++          srt_p = p;
++        }
++      }
++      release(&p->lock);
++    }
++
++    if(srt_p != 0){
++      p = srt_p;
++
++      acquire(&p->lock);
++
++      if(p->state == RUNNABLE){
++        p->state = RUNNING;
++        c->proc = p;
++        swtch(&c->context, &p->context);
++
++        c->proc = 0;
++      }
++      release(&p->lock);
++    }
++  }
++}
++#endif
++
++
++#ifdef CFSD
++void
++scheduler(void)
++{
++  struct proc *p;
++  struct cpu *c = mycpu();
++  struct proc *cfsd_p;
++  int p_ratio;
++  int acc_ratio;
++  
++  c->proc = 0;
++  for(;;){
++    // Avoid deadlock by ensuring that devices can interrupt.
++    intr_on();
++
++    cfsd_p = 0;
++    p_ratio = 0;
++    acc_ratio = 0;
++
++    for(p = proc; p < &proc[NPROC]; p++) {
++      acquire(&p->lock);
++
++      if(p->state == RUNNABLE) {
++
++        p_ratio = (p->rutime * p->priority)/(p->rutime + p->stime);
++
++        if(!cfsd_p){
++          cfsd_p = p;
++          acc_ratio = p_ratio;
++        }
++        else if(p_ratio < acc_ratio){
++          cfsd_p = p;
++          acc_ratio = p_ratio;
++        }
++      }
++      release(&p->lock);
++    }
++
++    if(cfsd_p != 0){
++      p = cfsd_p;
++
++      acquire(&p->lock);
++
++      if(p->state == RUNNABLE){
++        p->state = RUNNING;
++        c->proc = p;
++        swtch(&c->context, &p->context);
++
++        c->proc = 0;
++      }
++      release(&p->lock);
++    }
++  }
++}
++#endif
++
++
+ 
+ // Switch to scheduler.  Must hold only p->lock
+ // and have changed proc->state. Saves and restores
+@@ -496,8 +676,20 @@ void
+ yield(void)
+ {
+   struct proc *p = myproc();
++  int time;
++  acquire(&tickslock);
++  time = (int)ticks;
++  release(&tickslock);
++
+   acquire(&p->lock);
++
++  // update approximated burst time when proccess is yield
++  p->average_bursttime = ALPHA * p->current_bursttime + ((100 - ALPHA)* p->average_bursttime)/100;
++  p->current_bursttime = 0;
++
+   p->state = RUNNABLE;
++  p->runnabletime = time;
++
+   sched();
+   release(&p->lock);
+ }
+@@ -538,6 +730,11 @@ sleep(void *chan, struct spinlock *lk)
+   // so it's okay to release lk.
+ 
+   acquire(&p->lock);  //DOC: sleeplock1
++
++  // update approximated burst time when proccess is blocked
++  p->average_bursttime = ALPHA * p->current_bursttime + ((100 - ALPHA)* p->average_bursttime)/100;
++  p->current_bursttime = 0;
++
+   release(lk);
+ 
+   // Go to sleep.
+@@ -566,6 +763,7 @@ wakeup(void *chan)
+       acquire(&p->lock);
+       if(p->state == SLEEPING && p->chan == chan) {
+         p->state = RUNNABLE;
++        p->runnabletime = (int)ticks;
+       }
+       release(&p->lock);
+     }
+@@ -654,3 +852,150 @@ procdump(void)
+     printf("\n");
+   }
+ }
++
++// Update the time fields for each process
++void
++update_time()
++{
++  struct proc *p;
++
++  for(p = proc; p < &proc[NPROC]; p++) {
++    if(p != myproc()){
++      acquire(&p->lock);
++
++      if(p->state == SLEEPING){
++        p->stime ++;
++      }
++      else if(p->state == RUNNABLE){
++        p->retime ++;
++      }
++      else if(p->state == RUNNING){
++        p->rutime ++;
++        p->current_bursttime ++;
++      }
++
++      release(&p->lock);
++    }
++  }
++}
++
++int
++trace(int mask, int pid){
++  if(mask<= 0 || pid <= 0)
++    return -1;
++
++  struct proc *p;
++
++  for(p = proc; p< &proc[NPROC]; p++){
++    if(p->pid == pid){
++      p->mask = mask;
++      return 0;
++    }
++  }
++
++  return -1;  
++}
++
++int 
++wait_stat(uint64 status, uint64 performance)
++{
++  struct proc *np;
++  int havekids, pid;
++  struct proc *p = myproc();
++  int time;
++
++  acquire(&wait_lock);
++
++  for(;;){
++    // Scan through table looking for exited children.
++    havekids = 0;
++    for(np = proc; np < &proc[NPROC]; np++){
++      if(np->parent == p){
++
++        acquire(&tickslock);
++        time = ticks;
++        release(&tickslock);
++
++        // make sure the child isn't still in exit() or swtch().
++        acquire(&np->lock);
++
++        havekids = 1;
++        if(np->state == ZOMBIE){
++          // Found one.
++          pid = np->pid;
++
++          np->ttime = time;
++
++          if(performance != 0 && copyout(p->pagetable, (uint64)performance, (char *)&np->ctime,
++                                  sizeof(*(struct perf*)performance)) < 0) {
++            release(&np->lock);
++            release(&wait_lock);
++            return -1;
++          }
++
++          if(status != 0 && copyout(p->pagetable, (uint64)status, (char *)&np->xstate,
++                                  sizeof(np->xstate)) < 0) {
++            release(&np->lock);
++            release(&wait_lock);
++            return -1;
++          }
++
++          freeproc(np);
++          release(&np->lock);
++          release(&wait_lock);
++          return pid;
++        }
++        release(&np->lock);
++      }
++    }
++
++    // No point waiting if we don't have any children.
++    if(!havekids || p->killed){
++      release(&wait_lock);
++      return -1;
++    }
++    
++    // Wait for a child to exit.
++    sleep(p, &wait_lock);  //DOC: wait-sleep
++  }
++  return 0;
++}
++
++int 
++set_priority(int priority)
++{
++  struct proc *p = myproc();
++  int result = 0;
++
++  acquire(&p->lock);
++
++  switch (priority)
++  {
++    case 1:
++      p->priority = TEST_HIGH;
++      break;
++
++    case 2:
++      p->priority = HIGH;
++      break;
++
++    case 3:
++      p->priority = NORMAL;
++      break;
++
++    case 4:
++      p->priority = LOW;
++      break;
++
++    case 5:
++      p->priority = TEST_LOW;
++      break; 
++      
++    default:
++      result = -1;
++      break;
++  }
++
++  release(&p->lock);
++  return result;
++}
+\ No newline at end of file
+diff --git a/kernel/proc.h b/kernel/proc.h
+index 8e90008..e2d810a 100644
+--- a/kernel/proc.h
++++ b/kernel/proc.h
+@@ -82,6 +82,12 @@ struct trapframe {
+ 
+ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+ 
++enum priority  {TEST_HIGH = 1,
++                HIGH = 3,
++                NORMAL = 5,
++                LOW = 7,
++                TEST_LOW = 25};
++
+ // Per-process state
+ struct proc {
+   struct spinlock lock;
+@@ -105,4 +111,24 @@ struct proc {
+   struct file *ofile[NOFILE];  // Open files
+   struct inode *cwd;           // Current directory
+   char name[16];               // Process name (debugging)
++  int mask;
++  int ctime;                  // Process creation time
++  int ttime;                  // Process termination time
++  int stime;                  // The total time the process spent in the SLEEPING mode
++  int retime;                 // The total time the process spent in the RUNNABLE mode
++  int rutime;                 // The total time the process spent in the RUNNING mode
++  int average_bursttime;      // Approximate estimated burst time
++
++  int current_bursttime;      // Last burst time on cpu 
++  enum priority priority;     // The process priority
++  int runnabletime;           // The time a proccess become runnable
++};
++
++struct perf {
++  int ctime;                  // Process creation time
++  int ttime;                  // Process termination time
++  int stime;                  // The total time the process spent in the SLEEPING mode
++  int retime;                 // The total time the process spent in the RUNNABLE mode
++  int rutime;                 // The total time the process spent in the RUNNING mode
++  int average_bursttime;      // Average of bursttimes in 100ths (so average * 100)
+ };
+diff --git a/kernel/syscall.c b/kernel/syscall.c
+index c1b3670..ece982a 100644
+--- a/kernel/syscall.c
++++ b/kernel/syscall.c
+@@ -104,6 +104,38 @@ extern uint64 sys_unlink(void);
+ extern uint64 sys_wait(void);
+ extern uint64 sys_write(void);
+ extern uint64 sys_uptime(void);
++extern uint64 sys_trace(void);
++extern uint64 sys_wait_stat(void);
++extern uint64 sys_set_priority(void);
++
++
++static char* syscallnames [] = {
++[SYS_fork]    "fork",
++[SYS_exit]    "exit",
++[SYS_wait]    "wait",
++[SYS_pipe]    "pipe",
++[SYS_read]    "read",
++[SYS_kill]    "kill",
++[SYS_exec]    "exec",
++[SYS_fstat]   "fstat",
++[SYS_chdir]   "chdir",
++[SYS_dup]     "dup",
++[SYS_getpid]  "getpid",
++[SYS_sbrk]    "sbrk",
++[SYS_sleep]   "sleep",
++[SYS_uptime]  "uptime",
++[SYS_open]    "open",
++[SYS_write]   "write",
++[SYS_mknod]   "mknod",
++[SYS_unlink]  "unlink",
++[SYS_link]    "link",
++[SYS_mkdir]   "mkdir",
++[SYS_close]   "close",
++[SYS_trace]   "trace",
++[SYS_wait_stat]   "wait_stat",
++[SYS_set_priority] "set_priority",
++};
++
+ 
+ static uint64 (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -127,6 +159,9 @@ static uint64 (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_trace]   sys_trace,
++[SYS_wait_stat]   sys_wait_stat,
++[SYS_set_priority] sys_set_priority,
+ };
+ 
+ void
+@@ -134,10 +169,24 @@ syscall(void)
+ {
+   int num;
+   struct proc *p = myproc();
++  int first_arg = (int)p->trapframe->a0;
+ 
+   num = p->trapframe->a7;
+   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+     p->trapframe->a0 = syscalls[num]();
++
++    if((p->mask | 1 << num) == p->mask){
++      if(num == SYS_fork){
++        printf("%d: syscall fork NULL -> %d\n", p->pid, p->trapframe->a0);
++      }
++      else if(num == SYS_sbrk || num == SYS_kill){
++        printf("%d: syscall %s %d -> %d\n", p->pid, syscallnames[num], first_arg, p->trapframe->a0);
++      }
++      else{
++        printf("%d: syscall %s -> %d\n", p->pid, syscallnames[num], p->trapframe->a0);
++      } 
++    }
++    
+   } else {
+     printf("%d %s: unknown sys call %d\n",
+             p->pid, p->name, num);
+diff --git a/kernel/syscall.h b/kernel/syscall.h
+index bc5f356..decd41f 100644
+--- a/kernel/syscall.h
++++ b/kernel/syscall.h
+@@ -20,3 +20,6 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_trace 22
++#define SYS_wait_stat  23
++#define SYS_set_priority 24
+\ No newline at end of file
+diff --git a/kernel/sysproc.c b/kernel/sysproc.c
+index e8bcda9..d4514e3 100644
+--- a/kernel/sysproc.c
++++ b/kernel/sysproc.c
+@@ -6,6 +6,7 @@
+ #include "memlayout.h"
+ #include "spinlock.h"
+ #include "proc.h"
++#include "syscall.h"
+ 
+ uint64
+ sys_exit(void)
+@@ -47,6 +48,7 @@ sys_sbrk(void)
+   if(argint(0, &n) < 0)
+     return -1;
+   addr = myproc()->sz;
++  
+   if(growproc(n) < 0)
+     return -1;
+   return addr;
+@@ -80,6 +82,7 @@ sys_kill(void)
+ 
+   if(argint(0, &pid) < 0)
+     return -1;
++
+   return kill(pid);
+ }
+ 
+@@ -95,3 +98,45 @@ sys_uptime(void)
+   release(&tickslock);
+   return xticks;
+ }
++
++uint64
++sys_trace(void)
++{
++  int mask;
++  int pid;
++
++  if(argint(0, &mask) < 0)
++    return -1;
++
++  if(argint(1, &pid) < 0)
++    return -1;
++
++  return trace(mask, pid);  
++}
++
++// return the process wait status
++uint64
++sys_wait_stat(void)
++{ 
++  uint64 stat_addr;
++  uint64 perf_addr;
++
++  if(argaddr(0, &stat_addr) < 0)
++    return -1;
++
++  if(argaddr(1, &perf_addr) < 0)
++    return -1;
++
++  return wait_stat(stat_addr, perf_addr);
++}
++
++// set priority to cuurent proccess
++uint64
++sys_set_priority(void)
++{
++  int priority;
++
++  if(argint(0, &priority) < 0)
++    return -1;
++  return set_priority(priority);
++}
+diff --git a/kernel/trap.c b/kernel/trap.c
+index a63249e..c4c48df 100644
+--- a/kernel/trap.c
++++ b/kernel/trap.c
+@@ -38,6 +38,14 @@ usertrap(void)
+ {
+   int which_dev = 0;
+ 
++  #ifndef FCFS
++  int time;
++
++  acquire(&tickslock);
++  time = (int)ticks;
++  release(&tickslock);
++  #endif
++
+   if((r_sstatus() & SSTATUS_SPP) != 0)
+     panic("usertrap: not from user mode");
+ 
+@@ -76,9 +84,15 @@ usertrap(void)
+   if(p->killed)
+     exit(-1);
+ 
++
++  #ifdef FCFS
++  // do not yield
++  #else
+   // give up the CPU if this is a timer interrupt.
+-  if(which_dev == 2)
++  if(which_dev == 2 && time % QUANTUM == 0) // timeintr every QUANTUM ticks
+     yield();
++  #endif
++  
+ 
+   usertrapret();
+ }
+@@ -137,6 +151,14 @@ kerneltrap()
+   uint64 sepc = r_sepc();
+   uint64 sstatus = r_sstatus();
+   uint64 scause = r_scause();
++
++  #ifndef FCFS
++  int time;
++
++  acquire(&tickslock);
++  time = (int)ticks;
++  release(&tickslock);
++  #endif
+   
+   if((sstatus & SSTATUS_SPP) == 0)
+     panic("kerneltrap: not from supervisor mode");
+@@ -149,9 +171,13 @@ kerneltrap()
+     panic("kerneltrap");
+   }
+ 
++  #ifdef FCFS
++  // do not yield
++  #else
+   // give up the CPU if this is a timer interrupt.
+-  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
++  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING && time % QUANTUM == 0) // timeintr every QUANTUM ticks
+     yield();
++  #endif
+ 
+   // the yield() may have caused some traps to occur,
+   // so restore trap registers for use by kernelvec.S's sepc instruction.
+@@ -166,6 +192,8 @@ clockintr()
+   ticks++;
+   wakeup(&ticks);
+   release(&tickslock);
++
++  update_time();
+ }
+ 
+ // check if it's an external interrupt or software interrupt,
+diff --git a/path b/path
+new file mode 100644
+index 0000000..b687a37
+--- /dev/null
++++ b/path
+@@ -0,0 +1 @@
++/:/user/:/file/test/:/APPDATA/:
+diff --git a/user/sh.c b/user/sh.c
+index 83dd513..809e5ed 100644
+--- a/user/sh.c
++++ b/user/sh.c
+@@ -63,6 +63,13 @@ runcmd(struct cmd *cmd)
+   struct listcmd *lcmd;
+   struct pipecmd *pcmd;
+   struct redircmd *rcmd;
++  int path_fd; 
++  int max_path_size= 1024;
++  int path_size;
++  char path_buf[max_path_size];
++  char new_command[128];
++  int i;
++  int current_dir = 0;
+ 
+   if(cmd == 0)
+     exit(1);
+@@ -76,7 +83,28 @@ runcmd(struct cmd *cmd)
+     if(ecmd->argv[0] == 0)
+       exit(1);
+     exec(ecmd->argv[0], ecmd->argv);
++
++    // concat the command into each dir in path 
++    path_fd = open("/path", O_RDONLY | O_CREATE);
++    path_size = read(path_fd, path_buf, max_path_size);
++
++    for(i = 0; i < path_size; i++){
++      if(path_buf[i] == ':'){
++        path_buf[i] = 0;
++      }
++    }
++
++    while(current_dir < path_size){
++      strcpy(new_command, path_buf + current_dir);
++      strcpy(new_command + strlen(new_command), ecmd->argv[0]);
++
++      exec(new_command, ecmd->argv);
++      current_dir += strlen(path_buf + current_dir) + 1;
++    }
++  
+     fprintf(2, "exec %s failed\n", ecmd->argv[0]);
++    close(path_fd);
++
+     break;
+ 
+   case REDIR:
+@@ -490,4 +518,4 @@ nulterminate(struct cmd *cmd)
+     break;
+   }
+   return cmd;
+-}
++}
+\ No newline at end of file
+diff --git a/user/test.c b/user/test.c
+new file mode 100644
+index 0000000..f7109e3
+--- /dev/null
++++ b/user/test.c
+@@ -0,0 +1,37 @@
++#include "kernel/types.h"
++#include "user/user.h"
++#include "kernel/fcntl.h"
++
++struct perf {
++  int ctime;                // Process creation time
++  int ttime;                // Process termination time
++  int stime;                // The total time the process spent in the SLEEPING mode
++  int retime;               // The total time the process spent in the RUNNABLE mode
++  int rutime;               // The total time the process spent in the RUNNING mode
++  int average_bursttime;    // Approximate estimated burst time
++};
++
++
++int main(int argc, char** argv){
++    int i;
++    struct perf *pr = malloc(sizeof(*pr));
++
++    int pid = fork();
++    if(pid!=0){
++        int status;
++        wait_stat(&status, pr);
++        fprintf(2, "process status:\n creation = %d\n termination = %d\n sleeping = %d\n runnable = %d\n running = %d \n  burst = %d \n",
++            pr->ctime, pr->ttime, pr->stime, pr->retime, pr->rutime, pr->average_bursttime);
++
++        free(pr);
++    }
++    else{
++        sleep(10);
++        for(i=0; i<=100; i++)
++            fprintf(2, "TEST\n");
++
++        sleep(10);
++    }
++
++    exit(0);
++}
+\ No newline at end of file
+diff --git a/user/user.h b/user/user.h
+index b71ecda..300caf5 100644
+--- a/user/user.h
++++ b/user/user.h
+@@ -1,5 +1,6 @@
+ struct stat;
+ struct rtcdate;
++struct perf;
+ 
+ // system calls
+ int fork(void);
+@@ -23,6 +24,9 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int trace(int, int);
++int wait_stat(int*, struct perf*);
++int set_priority(int);
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+diff --git a/user/usys.pl b/user/usys.pl
+index 01e426e..e3d790e 100755
+--- a/user/usys.pl
++++ b/user/usys.pl
+@@ -36,3 +36,6 @@ entry("getpid");
+ entry("sbrk");
+ entry("sleep");
+ entry("uptime");
++entry("trace");
++entry("wait_stat");
++entry("set_priority");
