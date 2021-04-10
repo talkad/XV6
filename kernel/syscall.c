@@ -180,7 +180,7 @@ syscall(void)
         printf("%d: syscall fork NULL -> %d\n", p->pid, p->trapframe->a0);
       }
       else if(num == SYS_sbrk || num == SYS_kill){
-        printf("%d: syscall kill %d -> %d\n", p->pid, first_arg, p->trapframe->a0);
+        printf("%d: syscall %s %d -> %d\n", p->pid, syscallnames[num], first_arg, p->trapframe->a0);
       }
       else{
         printf("%d: syscall %s -> %d\n", p->pid, syscallnames[num], p->trapframe->a0);
