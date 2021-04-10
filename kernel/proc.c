@@ -148,7 +148,6 @@ found:
   // update the process creation time
   p->ctime = (int)ticks;
   p->runnabletime = (int)ticks;
-
   p->ttime = 0;
   p->stime = 0;
   p->retime = 0;
