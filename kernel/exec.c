@@ -116,6 +116,11 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
+  // return all the signal handlers to the default
+  for(i = 0; i < 32; i++)
+    if((uint64)p->sig_handlers[i] != SIG_IGN)
+      p->sig_handlers[i] = SIG_DFL;
+  
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:

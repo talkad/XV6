@@ -82,27 +82,44 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+#define SIG_DFL 0 /* default signal handling */
+#define SIG_IGN 1 /* ignore signal */
+#define SIGKILL 9
+#define SIGSTOP 17
+#define SIGCONT 19
+
 // Per-process state
 struct proc {
   struct spinlock lock;
 
   // p->lock must be held when using these:
-  enum procstate state;        // Process state
-  void *chan;                  // If non-zero, sleeping on chan
-  int killed;                  // If non-zero, have been killed
-  int xstate;                  // Exit status to be returned to parent's wait
-  int pid;                     // Process ID
+  enum procstate state;           // Process state
+  void *chan;                     // If non-zero, sleeping on chan
+  int killed;                     // If non-zero, have been killed
+  int xstate;                     // Exit status to be returned to parent's wait
+  int pid;                        // Process ID
 
   // proc_tree_lock must be held when using this:
   struct proc *parent;         // Parent process
 
   // these are private to the process, so p->lock need not be held.
-  uint64 kstack;               // Virtual address of kernel stack
-  uint64 sz;                   // Size of process memory (bytes)
-  pagetable_t pagetable;       // User page table
-  struct trapframe *trapframe; // data page for trampoline.S
-  struct context context;      // swtch() here to run process
-  struct file *ofile[NOFILE];  // Open files
-  struct inode *cwd;           // Current directory
-  char name[16];               // Process name (debugging)
+  uint64 kstack;                  // Virtual address of kernel stack
+  uint64 sz;                      // Size of process memory (bytes)
+  pagetable_t pagetable;          // User page table
+  struct trapframe *trapframe;    // data page for trampoline.S
+  struct context context;         // swtch() here to run process
+  struct file *ofile[NOFILE];     // Open files
+  struct inode *cwd;              // Current directory
+  char name[16];                  // Process name (debugging)
+
+  uint pending_sig;               // Pending signals
+  uint sig_mask;                  // Signal mask
+  void* sig_handlers[32];         // Signal handlers
+  struct trapframe *trap_backup;  // User trap frame backup
+};
+
+
+struct sigaction {
+  void (*sa_handler) (int);
+  uint sigmask;
 };

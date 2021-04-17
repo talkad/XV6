@@ -105,6 +105,7 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
+  int i;
 
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
@@ -140,6 +141,10 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
+  // Set up the SIG_DFL for all signals
+  for(i = 0; i < 32; i++)
+    p->sig_handlers[i] = SIG_DFL;
 
   return p;
 }
@@ -309,6 +314,11 @@ fork(void)
 
   acquire(&wait_lock);
   np->parent = p;
+  np->sig_mask = p->sig_mask;
+  
+  for(i = 0; i < 32; i++)
+    np->sig_handlers[i] = p->sig_handlers[i];
+
   release(&wait_lock);
 
   acquire(&np->lock);
@@ -653,4 +663,57 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+uint 
+sigprocmask(uint sigmask){
+  struct proc *p = myproc();
+  uint oldmask;
+
+  acquire(&p->lock);
+  oldmask = p->sig_mask;
+  p->sig_mask = sigmask;
+  release(&p->lock);
+
+  return oldmask;
+}
+
+int
+sigaction(int signum, uint64 act, uint64 oldact){
+  struct proc *p = myproc();
+
+  if(signum < 0 || signum >=32)
+    return -1;
+
+  acquire(&p->lock);
+
+  if(act != 0){
+    p->sig_handlers[signum] = ((struct sigaction*)act)->sa_handler; 
+  }
+
+ if(oldact != 0 && copyout(p->pagetable, oldact, (char *)&p->sig_handlers[signum],
+                                  sizeof(*((struct sigaction*)oldact)->sa_handler)) < 0) {
+    release(&p->lock);
+    return -1;
+  }
+
+  // todo
+  /*
+    Make sure that SIGKILL and SIGSTOP cannot be modified, blocked, or ignored!
+    Attempting to modify them will result in an error.
+  */
+
+  release(&p->lock);
+
+  return 0;
+}
+
+void 
+sigret(void){
+  struct proc *p = myproc();
+
+  acquire(&p->lock);
+  // todo 2.1.5
+  p->trapframe = p->trap_backup;
+  release(&p->lock);
 }
