@@ -449,6 +449,7 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
+  uint pending;
   
   c->proc = 0;
   for(;;){
@@ -458,16 +459,27 @@ scheduler(void)
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
+        
+        // check for sigstop and sigcont - 2.3
+        pending = p->pending_sig;  
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
+        if((pending & (1<<SIGCONT)) > 0){
+          p->pending_sig &= ~(1<<SIGCONT);
+          p->pending_sig &= ~(1<<SIGSTOP);
+        }
+
+        if((pending & (1<<SIGSTOP)) == 0){
+          // Switch to chosen process.  It is the process's job
+          // to release its lock and then reacquire it
+          // before jumping back to us.
+          p->state = RUNNING;
+          c->proc = p;
+          swtch(&c->context, &p->context);
+
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          c->proc = 0;
+        }
       }
       release(&p->lock);
     }
@@ -590,20 +602,24 @@ kill(int pid, int signum)
 {
   struct proc *p;
 
-  if(signum >= 32 || signum < 0)
+  if(signum < 0 || signum >= 32)
     return -1;
 
   for(p = proc; p < &proc[NPROC]; p++){
     acquire(&p->lock);
     if(p->pid == pid){
-      p->killed = 1;
-      p->sig_mask |= 2<<signum; //todo ??
-      // -1 upon failure ?
+      // p->killed = 1;
+      p->pending_sig |= 1<<signum; 
 
-      if(p->state == SLEEPING){
-        // Wake process from sleep().
-        p->state = RUNNABLE;
-      }
+      if(p->state == UNUSED || p->state == ZOMBIE){ // failure - the process does not exists or has terminated execution
+        release(&p->lock);
+        return -1;
+      } 
+
+      // if(p->state == SLEEPING){
+      //   // Wake process from sleep().
+      //   p->state = RUNNABLE;
+      // }
       release(&p->lock);
       return 0;
     }
@@ -691,10 +707,15 @@ sigaction(int signum, uint64 act, uint64 oldact){
   if(signum < 0 || signum >=32)
     return -1;
 
+  if(signum == SIGKILL || signum == SIGSTOP)
+    return -1; // SIGKILL and SIGSTOP cannot be modified (and ignored)
+
   acquire(&p->lock);
 
   if(act != 0){
     p->sig_handlers[signum] = ((struct sigaction*)act)->sa_handler; 
+    ((struct sigaction*)act)->sigmask &= ~((1 << SIGKILL) + (1 << SIGSTOP)); // SIGKILL and SIGSTOP cannot be ignored
+    p->sig_mask |= ((struct sigaction*)act)->sigmask;
   }
 
  if(oldact != 0 && copyout(p->pagetable, oldact, (char *)&p->sig_handlers[signum],
@@ -702,12 +723,6 @@ sigaction(int signum, uint64 act, uint64 oldact){
     release(&p->lock);
     return -1;
   }
-
-  // todo
-  /*
-    Make sure that SIGKILL and SIGSTOP cannot be modified, blocked, or ignored!
-    Attempting to modify them will result in an error.
-  */
 
   release(&p->lock);
 
@@ -723,3 +738,33 @@ sigret(void){
   p->trapframe = p->trap_backup;
   release(&p->lock);
 }
+
+void 
+sigkill(void){
+  struct proc *p = myproc();
+
+  acquire(&p->lock);
+  p->killed = 1;
+
+  if(p->state == SLEEPING){
+    // Wake process from sleep().
+    p->state = RUNNABLE;
+  }
+  release(&p->lock);
+}
+
+// void  todo
+// sigstop(void){
+//   struct proc *p = myproc();
+
+//   acquire(&p->lock);
+//   release(&p->lock);
+// }
+
+// void 
+// sigcont(void){
+//   struct proc *p = myproc();
+
+//   acquire(&p->lock);
+//   release(&p->lock);
+// }
