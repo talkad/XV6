@@ -90,6 +90,7 @@ void
 usertrapret(void)
 {
   struct proc *p = myproc();
+  int i;
 
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(), so turn off interrupts until
@@ -117,6 +118,38 @@ usertrapret(void)
 
   // set S Exception Program Counter to the saved user pc.
   w_sepc(p->trapframe->epc);
+
+  // handling signals 2.4
+  for(i = 0; i < 32; i++){
+    if((p->pending_sig & (1<<i)) != 0 && (p->sig_mask & (1<<i)) == 0){
+      
+      if((uint64)p->sig_handlers[i] == SIG_IGN){
+        p->pending_sig &= ~(1 << i);
+      }
+      else if((uint64)p->sig_handlers[i] == SIG_DFL){
+        sigkill();
+        p->pending_sig &= ~(1 << i);
+      }
+      else if((uint64)p->sig_handlers[i] == SIGSTOP){
+        sigstop();
+        p->pending_sig &= ~(1 << i);
+      }
+      else if((uint64)p->sig_handlers[i] == SIGCONT){
+        sigcont();
+        p->pending_sig &= ~(1 << i);
+      }
+      else if((uint64)p->sig_handlers[i] == SIGKILL){
+        sigkill();
+        p->pending_sig &= ~(1 << i);
+      }
+      else{
+        memmove(p->trap_backup, p->trapframe, sizeof(*p->trapframe));
+        
+
+
+      }
+    }
+  }
 
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);

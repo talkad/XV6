@@ -128,6 +128,13 @@ found:
     return 0;
   }
 
+  // Allocate a backup trapframe page.
+  if((p->trap_backup = (struct trapframe *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -141,6 +148,8 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
+  p->sig_mask = 0;
 
   // Set up the SIG_DFL for all signals
   for(i = 0; i < 32; i++)
@@ -735,7 +744,7 @@ sigret(void){
 
   acquire(&p->lock);
   // todo 2.1.5
-  p->trapframe = p->trap_backup;
+  memmove(p->trapframe, p->trap_backup, sizeof(*p->trapframe));
   release(&p->lock);
 }
 
@@ -753,18 +762,18 @@ sigkill(void){
   release(&p->lock);
 }
 
-// void  todo
-// sigstop(void){
-//   struct proc *p = myproc();
+void  //todo
+sigstop(void){
+  struct proc *p = myproc();
 
-//   acquire(&p->lock);
-//   release(&p->lock);
-// }
+  acquire(&p->lock);
+  release(&p->lock);
+}
 
-// void 
-// sigcont(void){
-//   struct proc *p = myproc();
+void 
+sigcont(void){
+  struct proc *p = myproc();
 
-//   acquire(&p->lock);
-//   release(&p->lock);
-// }
+  acquire(&p->lock);
+  release(&p->lock);
+}

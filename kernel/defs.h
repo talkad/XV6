@@ -109,6 +109,9 @@ void            procdump(void);
 uint            sigprocmask(uint sigmask);
 int             sigaction(int signum, uint64 act, uint64 oldact);
 void            sigret(void);
+void            sigstop(void);
+void            sigkill(void);
+void            sigcont(void);
 
 // swtch.S
 void            swtch(struct context*, struct context*);
