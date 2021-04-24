@@ -4,12 +4,17 @@
 
 int
 main(int argc, char **argv)
-{
-  if(argc != 3){
-    fprintf(2, "usage: kill pid...\n");
+{ 
+  int i;
+
+  if(argc < 3 || argc%2 == 0){
+    fprintf(2, "usage: kill (<pid> <signum>)*\n");
     exit(1);
   }
 
-  kill(atoi(argv[1]), atoi(argv[2]));
+  for(i = 1; i < argc ; i+=2){
+    kill(atoi(argv[i]), atoi(argv[i+1]));
+  }
+
   exit(0);
 }

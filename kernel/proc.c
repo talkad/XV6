@@ -176,6 +176,8 @@ freeproc(struct proc *p)
   p->name[0] = 0;
   p->chan = 0;
   p->killed = 0;
+  p->freezed = 0;
+  p->sighandler_flag = 0;
   p->xstate = 0;
   p->state = UNUSED;
 }
@@ -323,6 +325,7 @@ fork(void)
 
   acquire(&wait_lock);
   np->parent = p;
+  // inherit sigMask and the handlers of the parent proccess
   np->sig_mask = p->sig_mask;
   
   for(i = 0; i < 32; i++)
@@ -458,7 +461,6 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  uint pending;
   
   c->proc = 0;
   for(;;){
@@ -468,27 +470,18 @@ scheduler(void)
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
-        
-        // check for sigstop and sigcont - 2.3
-        pending = p->pending_sig;  
 
-        if((pending & (1<<SIGCONT)) > 0){
-          p->pending_sig &= ~(1<<SIGCONT);
-          p->pending_sig &= ~(1<<SIGSTOP);
-        }
+        // Switch to chosen process.  It is the process's job
+        // to release its lock and then reacquire it
+        // before jumping back to us.
+        p->state = RUNNING;
+        c->proc = p;
+        swtch(&c->context, &p->context);
 
-        if((pending & (1<<SIGSTOP)) == 0){
-          // Switch to chosen process.  It is the process's job
-          // to release its lock and then reacquire it
-          // before jumping back to us.
-          p->state = RUNNING;
-          c->proc = p;
-          swtch(&c->context, &p->context);
-
-          // Process is done running for now.
-          // It should have changed its p->state before coming back.
-          c->proc = 0;
-        }
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+      
       }
       release(&p->lock);
     }
@@ -617,7 +610,7 @@ kill(int pid, int signum)
   for(p = proc; p < &proc[NPROC]; p++){
     acquire(&p->lock);
     if(p->pid == pid){
-      // p->killed = 1;
+
       p->pending_sig |= 1<<signum; 
 
       if(p->state == UNUSED || p->state == ZOMBIE){ // failure - the process does not exists or has terminated execution
@@ -625,10 +618,6 @@ kill(int pid, int signum)
         return -1;
       } 
 
-      // if(p->state == SLEEPING){
-      //   // Wake process from sleep().
-      //   p->state = RUNNABLE;
-      // }
       release(&p->lock);
       return 0;
     }
@@ -717,18 +706,17 @@ sigaction(int signum, uint64 act, uint64 oldact){
     return -1;
 
   if(signum == SIGKILL || signum == SIGSTOP)
-    return -1; // SIGKILL and SIGSTOP cannot be modified (and ignored)
+    return -1; // SIGKILL and SIGSTOP cannot be modified (or ignored)
 
   acquire(&p->lock);
 
   if(act != 0){
-    p->sig_handlers[signum] = ((struct sigaction*)act)->sa_handler; 
-    ((struct sigaction*)act)->sigmask &= ~((1 << SIGKILL) + (1 << SIGSTOP)); // SIGKILL and SIGSTOP cannot be ignored
-    p->sig_mask |= ((struct sigaction*)act)->sigmask;
+    ((struct sigaction*)act)->sigmask &= ~((1 << SIGKILL) + (1 << SIGSTOP)); // SIGKILL and SIGSTOP cannot be blocked
+    p->sig_handlers[signum] = ((struct sigaction*)act); 
   }
 
- if(oldact != 0 && copyout(p->pagetable, oldact, (char *)&p->sig_handlers[signum],
-                                  sizeof(*((struct sigaction*)oldact)->sa_handler)) < 0) {
+ if(oldact != 0 && copyout(p->pagetable, oldact, (char *)p->sig_handlers[signum],
+                                  sizeof(*((struct sigaction*)oldact))) < 0) {
     release(&p->lock);
     return -1;
   }
@@ -743,8 +731,15 @@ sigret(void){
   struct proc *p = myproc();
 
   acquire(&p->lock);
-  // todo 2.1.5
+  // Restore the process original trapframe
   memmove(p->trapframe, p->trap_backup, sizeof(*p->trapframe));
+
+  // Restore the process original signal mask
+  p->sig_mask = p->mask_backup;
+
+  // Turn off the flag indicates a user space signal handling for blocking incoming signals at this time.
+  intr_off();
+
   release(&p->lock);
 }
 
@@ -757,16 +752,22 @@ sigkill(void){
 
   if(p->state == SLEEPING){
     // Wake process from sleep().
-    p->state = RUNNABLE;
+     p->state = RUNNABLE;
   }
   release(&p->lock);
 }
 
-void  //todo
+void
 sigstop(void){
   struct proc *p = myproc();
 
   acquire(&p->lock);
+  p->freezed = 1;
+
+  if(p->state == SLEEPING){
+    // Wake process from sleep().
+     p->state = RUNNABLE;
+  }
   release(&p->lock);
 }
 
@@ -775,5 +776,11 @@ sigcont(void){
   struct proc *p = myproc();
 
   acquire(&p->lock);
+  p->freezed = 0;
+
+  if(p->state == SLEEPING){
+    // Wake process from sleep().
+     p->state = RUNNABLE;
+  }
   release(&p->lock);
 }

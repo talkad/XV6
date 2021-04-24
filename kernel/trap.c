@@ -16,6 +16,10 @@ void kernelvec();
 
 extern int devintr();
 
+void sig_handler();
+void call_ret();
+void kerneltrap();
+
 void
 trapinit(void)
 {
@@ -90,7 +94,6 @@ void
 usertrapret(void)
 {
   struct proc *p = myproc();
-  int i;
 
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(), so turn off interrupts until
@@ -119,6 +122,23 @@ usertrapret(void)
   // set S Exception Program Counter to the saved user pc.
   w_sepc(p->trapframe->epc);
 
+  sig_handler();
+
+  // tell trampoline.S the user page table to switch to.
+  uint64 satp = MAKE_SATP(p->pagetable);
+
+  // jump to trampoline.S at the top of memory, which 
+  // switches to the user page table, restores user registers,
+  // and switches to user mode with sret.
+  uint64 fn = TRAMPOLINE + (userret - trampoline);
+  ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
+}
+
+void
+sig_handler(){
+  struct proc *p = myproc();
+  int i;
+
   // handling signals 2.4
   for(i = 0; i < 32; i++){
     if((p->pending_sig & (1<<i)) != 0 && (p->sig_mask & (1<<i)) == 0){
@@ -127,7 +147,13 @@ usertrapret(void)
         p->pending_sig &= ~(1 << i);
       }
       else if((uint64)p->sig_handlers[i] == SIG_DFL){
-        sigkill();
+        if(i == SIGSTOP)
+          sigstop();
+        else if(i == SIGCONT)
+          sigcont();
+        else
+          sigkill();
+
         p->pending_sig &= ~(1 << i);
       }
       else if((uint64)p->sig_handlers[i] == SIGSTOP){
@@ -143,22 +169,52 @@ usertrapret(void)
         p->pending_sig &= ~(1 << i);
       }
       else{
-        memmove(p->trap_backup, p->trapframe, sizeof(*p->trapframe));
-        
+      memmove(p->trap_backup, p->trapframe, sizeof(*p->trapframe));
+
+      // 1. todo
+
+      // backup and update mask
+      p->mask_backup = p->sig_mask;
+      p->sig_mask = ((struct sigaction*) p->sig_handlers[i])->sigmask;
+
+      // indicate that this proccess at signal handling
+      p->sighandler_flag = 1;
+
+      // trapframe and stack pointer
+      p->trapframe->sp -= sizeof(*p->trapframe);
+      p->trap_backup->sp = p->trapframe->sp;
+
+      // copy current trapframe to the trapframe back up stack pointer
+      copyout(p->pagetable, p->trap_backup->sp, (char *)p->trapframe, sizeof(*p->trapframe));
+
+      // update program counter
+      p->trapframe->epc = (uint64)((struct sigaction*) p->sig_handlers[i])->sa_handler;
+
+      // reduce trapframe stack pointer by currenct function length
+      p->trapframe->sp -= (&kerneltrap - &call_ret);
+
+      // copy this function to the proccess trapframe stack pointer
+      copyout(p->pagetable, p->trap_backup->sp, (char *)&call_ret, &kerneltrap - &call_ret);
+
+      // update registers
+      p->trapframe->a0 = i;
+      p->trapframe->ra = p->trapframe->sp;
 
 
+      // intr_on();
+
+      // call_ret();
       }
     }
   }
 
-  // tell trampoline.S the user page table to switch to.
-  uint64 satp = MAKE_SATP(p->pagetable);
+  if(p->freezed)
+    yield();
+}
 
-  // jump to trampoline.S at the top of memory, which 
-  // switches to the user page table, restores user registers,
-  // and switches to user mode with sret.
-  uint64 fn = TRAMPOLINE + (userret - trampoline);
-  ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
+void
+call_ret(){
+  sigret();
 }
 
 // interrupts and exceptions from kernel code go here via kernelvec,
