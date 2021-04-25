@@ -88,6 +88,8 @@ usertrap(void)
   if(which_dev == 2)
     yield();
 
+  sig_handler();
+
   usertrapret();
 }
 
@@ -126,8 +128,6 @@ usertrapret(void)
   // set S Exception Program Counter to the saved user pc.
   w_sepc(p->trapframe->epc);
 
-  sig_handler();
-
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);
 
@@ -141,6 +141,12 @@ usertrapret(void)
 void
 sig_handler(){
   struct proc *p = myproc();
+
+  // if((p->pending_sig & (1<<SIGKILL)) != 0) {
+  //     sigkill();
+  //     p->pending_sig &= ~(1 << SIGKILL);
+  //   }
+  
   int i;
 
   // handling signals 2.4
@@ -175,6 +181,7 @@ sig_handler(){
       }
       else{
       memmove(p->trap_backup, p->trapframe, sizeof(*p->trapframe));
+      printf("nooooooooooooooooooo");
 
       // copy signal handler to local variable
       // void (*sa_handler) (int);   // todo

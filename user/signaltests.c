@@ -13,28 +13,28 @@
 void
 killstatus(char *s)
 {
-  // int xst;
+  int xst;
   
-  // for(int i = 0; i < 100; i++){
-  //   int pid1 = fork();
-  //   if(pid1 < 0){
-  //     printf("%s: fork failed\n", s);
-  //     exit(1);
-  //   }
-  //   if(pid1 == 0){
-  //     while(1) {
-  //       getpid();
-  //     }
-  //     exit(0);
-  //   }
-  //   sleep(1);
-  //   kill(pid1,SIGKILL);
-  //   wait(&xst);
-  //   if(xst != -1) {
-  //      printf("%s: status should be -1\n", s);
-  //      exit(1);
-  //   }
-  // }
+  for(int i = 0; i < 100; i++){
+    int pid1 = fork();
+    if(pid1 < 0){
+      printf("%s: fork failed\n", s);
+      exit(1);
+    }
+    if(pid1 == 0){
+      while(1) {
+        getpid();
+      }
+      exit(0);
+    }
+    sleep(1);
+    kill(pid1,SIGKILL);
+    wait(&xst);
+    if(xst != -1) {
+       printf("%s: status should be -1\n", s);
+       exit(1);
+    }
+  }
   exit(0);
 }
 

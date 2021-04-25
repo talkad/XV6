@@ -82,7 +82,7 @@ sys_kill(void)
   if(argint(0, &pid) < 0)
     return -1;
 
-  if(argint(0, &signum) < 0)
+  if(argint(1, &signum) < 0)
     return -1;
 
   return kill(pid, signum);

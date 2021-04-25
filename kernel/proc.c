@@ -128,13 +128,6 @@ found:
     return 0;
   }
 
-  // Allocate a backup trapframe page.
-  if((p->trap_backup = (struct trapframe *)kalloc()) == 0){
-    freeproc(p);
-    release(&p->lock);
-    return 0;
-  }
-
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -602,7 +595,7 @@ int
 kill(int pid, int signum)
 {
   struct proc *p;
-
+  
   if(signum < 0 || signum >= 32)
     return -1;
 
@@ -616,6 +609,11 @@ kill(int pid, int signum)
         release(&p->lock);
         return -1;
       } 
+
+      if(p->state == SLEEPING){
+        // Wake process from sleep().
+        p->state = RUNNABLE;
+      }
 
       release(&p->lock);
       return 0;
@@ -746,14 +744,12 @@ void
 sigkill(void){
   struct proc *p = myproc();
 
-  acquire(&p->lock);
   p->killed = 1;
 
   if(p->state == SLEEPING){
     // Wake process from sleep().
      p->state = RUNNABLE;
   }
-  release(&p->lock);
 }
 
 
@@ -761,27 +757,22 @@ void
 sigstop(void){
   struct proc *p = myproc();
 
-  acquire(&p->lock);
   p->freezed = 1;
-
 
   if(p->state == SLEEPING){
     // Wake process from sleep().
     p->state = RUNNABLE;
   }
-  release(&p->lock);
 }
 
 void 
 sigcont(void){
   struct proc *p = myproc();
 
-  acquire(&p->lock);
   p->freezed = 0;
 
   if(p->state == SLEEPING){
     // Wake process from sleep().
      p->state = RUNNABLE;
   }
-  release(&p->lock);
 }
