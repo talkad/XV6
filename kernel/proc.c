@@ -773,6 +773,6 @@ sigcont(void){
 
   if(p->state == SLEEPING){
     // Wake process from sleep().
-     p->state = RUNNABLE;
+    p->state = RUNNABLE;
   }
 }

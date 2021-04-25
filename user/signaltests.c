@@ -38,6 +38,71 @@ killstatus(char *s)
   exit(0);
 }
 
+// test if child process execution stopped
+void
+childfreezed(char *s) // todo
+{
+  int xst;
+  int counter;
+  int last_counter;
+  
+  for(int i = 0; i < 20; i++){
+    counter = 0;
+
+    int pid1 = fork();
+    if(pid1 < 0){
+      printf("%s: fork failed\n", s);
+      exit(1);
+    }
+    if(pid1 == 0){
+      while(1) {
+        counter++;
+      }
+      exit(0);
+    }
+    
+    sleep(2);
+    kill(pid1,SIGSTOP);
+    last_counter = counter;
+    sleep(2);
+
+    kill(pid1,SIGKILL);
+    wait(&xst);
+
+    if(last_counter != counter) {
+       printf("%d %d: values should be -equals\n", last_counter, counter);
+       exit(1);
+    }
+  }
+  exit(0);
+}
+
+// change mask of a proccess
+void
+sigprocmaskTest(char *s)
+{
+  uint mask = 42;
+  uint mask1 = sigprocmask(mask);
+  uint mask2 = sigprocmask(mask);
+
+  int pid1 = fork();
+  if(pid1 == 0){
+    if(sigprocmask(0) != 84){
+      printf("the proc mask value should be like the father");
+      exit(1);
+    }
+    exit(0);
+  }
+
+  if(mask1 != 0 || mask2 != 42){
+    printf("proc mask didn't change");
+    exit(1);
+  }
+  
+  exit(0);
+}
+
+
 
 //
 // use sbrk() to count how many free physical memory pages there are.
@@ -152,6 +217,8 @@ main(int argc, char *argv[])
     char *s;
   } tests[] = {
     {killstatus, "killstatus"},
+    {childfreezed, "childfreezed"},
+    {sigprocmaskTest, "sigprocmaskTest"},
     { 0, 0},
   };
 
