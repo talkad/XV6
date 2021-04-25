@@ -325,6 +325,7 @@ fork(void)
 
   acquire(&wait_lock);
   np->parent = p;
+
   // inherit sigMask and the handlers of the parent proccess
   np->sig_mask = p->sig_mask;
   
@@ -470,7 +471,6 @@ scheduler(void)
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
-
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
@@ -481,7 +481,6 @@ scheduler(void)
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
-      
       }
       release(&p->lock);
     }
@@ -757,16 +756,18 @@ sigkill(void){
   release(&p->lock);
 }
 
-void
+
+void 
 sigstop(void){
   struct proc *p = myproc();
 
   acquire(&p->lock);
   p->freezed = 1;
 
+
   if(p->state == SLEEPING){
     // Wake process from sleep().
-     p->state = RUNNABLE;
+    p->state = RUNNABLE;
   }
   release(&p->lock);
 }

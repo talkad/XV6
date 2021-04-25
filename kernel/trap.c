@@ -14,6 +14,10 @@ extern char trampoline[], uservec[], userret[];
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
 
+void sig_handler();
+void call_ret();
+void kerneltrap();
+
 extern int devintr();
 
 void sig_handler();
@@ -202,7 +206,6 @@ sig_handler(){
       // update registers
       p->trapframe->a0 = i;
       p->trapframe->ra = p->trapframe->sp;
-
 
       // intr_on();
 
