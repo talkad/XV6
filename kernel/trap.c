@@ -165,13 +165,16 @@ sig_handler(){
         p->pending_sig &= ~(1 << i);
       }
       else if((uint64)p->sig_handlers[i] == SIGKILL){
+        printf("ssssssssssssssssssssssssss\n");
         sigkill();
         p->pending_sig &= ~(1 << i);
       }
       else{
       memmove(p->trap_backup, p->trapframe, sizeof(*p->trapframe));
 
-      // 1. todo
+      // copy signal handler to local variable
+      // void (*sa_handler) (int);   // todo
+      // copyin(p->pagetable, sa_handler, ((char *)((struct sigaction*) p->sig_handlers[i])->sa_handler), sizeof((*sa_handler)));
 
       // backup and update mask
       p->mask_backup = p->sig_mask;

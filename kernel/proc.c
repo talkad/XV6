@@ -738,7 +738,7 @@ sigret(void){
   p->sig_mask = p->mask_backup;
 
   // Turn off the flag indicates a user space signal handling for blocking incoming signals at this time.
-  intr_off();
+  p->sighandler_flag = 0;
 
   release(&p->lock);
 }
