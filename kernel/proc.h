@@ -90,6 +90,8 @@ struct proc {
   enum procstate state;           // Process state
   void *chan;                     // If non-zero, sleeping on chan
   int killed;                     // If non-zero, have been killed
+  int freezed;                    // If non-zero, have been freezed
+  int sighandler_flag;            // If non-zero, this proccess is at signal handling
   int xstate;                     // Exit status to be returned to parent's wait
   int pid;                        // Process ID
 
@@ -110,6 +112,7 @@ struct proc {
   uint sig_mask;                  // Signal mask
   void* sig_handlers[32];         // Signal handlers
   struct trapframe *trap_backup;  // User trap frame backup
+  uint mask_backup;
 };
 
 
