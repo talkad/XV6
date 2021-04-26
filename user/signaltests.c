@@ -77,30 +77,69 @@ childfreezed(char *s) // todo
   exit(0);
 }
 
-// change mask of a proccess
-void
-sigprocmaskTest(char *s)
-{
-  uint mask = 42;
-  uint mask1 = sigprocmask(mask);
-  uint mask2 = sigprocmask(mask);
+// // test sigaction
+// void
+// sigaction_test(){
+//   int status;
+//   int pid = fork();
+//   if(pid){
+//     sleep(3);
+//     kill(pid, 15);
+//     sleep(10);
+//     kill(pid, SIGCONT);
+//     printf("father is going to wait\n");
+//     wait(&status);
+//   }
+//   else{
+//     struct sigaction* action = (struct sigaction*) malloc(sizeof(sigaction));
+//     action->sa_handler = SIG_STOP;
+//     action->sigmask = 0;
+//     sigaction(15, action, NULL);
 
-  int pid1 = fork();
-  if(pid1 == 0){
-    if(sigprocmask(0) != 84){
-      printf("the proc mask value should be like the father");
-      exit(1);
-    }
-    exit(0);
-  }
+//     uint oldmask = sigprocmask(0x8000);
 
-  if(mask1 != 0 || mask2 != 42){
-    printf("proc mask didn't change");
-    exit(1);
-  }
+//     if(oldmask != 0){
+//       printf("sigprocmask failed");
+//       exit(1);
+//     }
+
+//     sleep(10);
+//     printf("child signal is still blocked \n");
+//     oldmask = sigprocmask(0);
+//     if(oldmask != 0x8000){
+//       printf("sigprocmask failed");
+//       exit(1);
+//     }
+//     free(action);
+//     exit(0);
+//   }
+
+// }
+
+// // change mask of a proccess
+// void
+// sigprocmaskTest(char *s)
+// {
+//   uint mask = 42;
+//   uint mask1 = sigprocmask(mask);
+//   uint mask2 = sigprocmask(mask);
+
+//   int pid1 = fork();
+//   if(pid1 == 0){
+//     if(sigprocmask(0) != 84){
+//       printf("the proc mask value should be like the father");
+//       exit(1);
+//     }
+//     exit(0);
+//   }
+
+//   if(mask1 != 0 || mask2 != 42){
+//     printf("proc mask didn't change");
+//     exit(1);
+//   }
   
-  exit(0);
-}
+//   exit(0);
+// }
 
 
 
@@ -218,7 +257,7 @@ main(int argc, char *argv[])
   } tests[] = {
     {killstatus, "killstatus"},
     {childfreezed, "childfreezed"},
-    {sigprocmaskTest, "sigprocmaskTest"},
+    // {sigprocmaskTest, "sigprocmaskTest"},
     { 0, 0},
   };
 

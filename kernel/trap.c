@@ -141,11 +141,6 @@ usertrapret(void)
 void
 sig_handler(){
   struct proc *p = myproc();
-
-  // if((p->pending_sig & (1<<SIGKILL)) != 0) {
-  //     sigkill();
-  //     p->pending_sig &= ~(1 << SIGKILL);
-  //   }
   
   int i;
 
@@ -163,31 +158,25 @@ sig_handler(){
           sigcont();
         else
           sigkill();
-
-        p->pending_sig &= ~(1 << i);
       }
       else if((uint64)p->sig_handlers[i] == SIGSTOP){
         sigstop();
-        p->pending_sig &= ~(1 << i);
       }
       else if((uint64)p->sig_handlers[i] == SIGCONT){
         sigcont();
-        p->pending_sig &= ~(1 << i);
       }
       else if((uint64)p->sig_handlers[i] == SIGKILL){
         sigkill();
-        p->pending_sig &= ~(1 << i);
       }
       else{
-      memmove(p->trap_backup, p->trapframe, sizeof(*p->trapframe));
 
       // copy signal handler to local variable
-      // void (*sa_handler) (int);   // todo
-      // copyin(p->pagetable, sa_handler, ((char *)((struct sigaction*) p->sig_handlers[i])->sa_handler), sizeof((*sa_handler)));
+      uint64 handler;
+      copyin(p->pagetable, (char *)&handler , (uint64) p->sig_handlers[i], sizeof(handler));
 
       // backup and update mask
       p->mask_backup = p->sig_mask;
-      p->sig_mask = ((struct sigaction*) p->sig_handlers[i])->sigmask;
+      p->sig_mask = p->mask_handlers[i];
 
       // indicate that this proccess at signal handling
       p->sighandler_flag = 1;
@@ -200,22 +189,20 @@ sig_handler(){
       copyout(p->pagetable, p->trap_backup->sp, (char *)p->trapframe, sizeof(*p->trapframe));
 
       // update program counter
-      p->trapframe->epc = (uint64)((struct sigaction*) p->sig_handlers[i])->sa_handler;
+      p->trapframe->epc = handler;
 
       // reduce trapframe stack pointer by currenct function length
-      p->trapframe->sp -= (&kerneltrap - &call_ret);
+      p->trapframe->sp -= (kerneltrap - call_ret);
 
       // copy this function to the proccess trapframe stack pointer
-      copyout(p->pagetable, p->trap_backup->sp, (char *)&call_ret, &kerneltrap - &call_ret);
+      copyout(p->pagetable, p->trap_backup->sp, (char *)call_ret, kerneltrap - call_ret);
 
       // update registers
       p->trapframe->a0 = i;
       p->trapframe->ra = p->trapframe->sp;
-
-      // intr_on();
-
-      // call_ret();
       }
+
+    p->pending_sig &= ~(1 << i);
     }
   }
 

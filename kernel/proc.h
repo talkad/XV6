@@ -111,6 +111,7 @@ struct proc {
   uint pending_sig;               // Pending signals
   uint sig_mask;                  // Signal mask
   void* sig_handlers[32];         // Signal handlers
+  uint mask_handlers[32];         // the mask of the handlers
   struct trapframe *trap_backup;  // User trap frame backup
   uint mask_backup;
 };

@@ -610,11 +610,6 @@ kill(int pid, int signum)
         return -1;
       } 
 
-      if(p->state == SLEEPING){
-        // Wake process from sleep().
-        p->state = RUNNABLE;
-      }
-
       release(&p->lock);
       return 0;
     }
@@ -698,7 +693,8 @@ sigprocmask(uint sigmask){
 int
 sigaction(int signum, uint64 act, uint64 oldact){
   struct proc *p = myproc();
-
+  struct sigaction *action;
+  
   if(signum < 0 || signum >=32)
     return -1;
 
@@ -707,16 +703,36 @@ sigaction(int signum, uint64 act, uint64 oldact){
 
   acquire(&p->lock);
 
-  if(act != 0){
-    ((struct sigaction*)act)->sigmask &= ~((1 << SIGKILL) + (1 << SIGSTOP)); // SIGKILL and SIGSTOP cannot be blocked
-    p->sig_handlers[signum] = ((struct sigaction*)act); 
+  if(oldact != 0){
+    action = ((struct sigaction*)oldact);
+
+    if(copyout(p->pagetable, (uint64)action->sa_handler, (void *)&p->sig_handlers[signum], sizeof(void *)) < 0 ||
+      copyout(p->pagetable, (uint64)&action->sigmask, (char *)&p->mask_handlers[signum], sizeof(uint)) < 0){
+        release(&p->lock);
+        return -1;
+      }
+
   }
 
- if(oldact != 0 && copyout(p->pagetable, oldact, (char *)p->sig_handlers[signum],
-                                  sizeof(*((struct sigaction*)oldact))) < 0) {
-    release(&p->lock);
-    return -1;
+  if(act != 0){
+    action = ((struct sigaction*)act);
+
+    if(copyin(p->pagetable, (void *)&p->sig_handlers[signum], (uint64)action->sa_handler, sizeof(void *)) < 0 ||
+      copyin(p->pagetable, (char *)&p->mask_handlers[signum], (uint64)&action->sigmask, sizeof(uint)) < 0){
+        release(&p->lock);
+        return -1;
+      }
+
+    // action->sigmask &= ~((1 << SIGKILL) + (1 << SIGSTOP)); // SIGKILL and SIGSTOP cannot be blocked
+    // p->sig_handlers[signum] = ((struct sigaction*)act); 
   }
+
+
+//  if(oldact != 0 && copyout(p->pagetable, oldact, (char *)p->sig_handlers[signum],
+//                                   sizeof(*((struct sigaction*)oldact))) < 0) {
+//     release(&p->lock);
+//     return -1;
+//   }
 
   release(&p->lock);
 
@@ -727,7 +743,6 @@ void
 sigret(void){
   struct proc *p = myproc();
 
-  acquire(&p->lock);
   // Restore the process original trapframe
   memmove(p->trapframe, p->trap_backup, sizeof(*p->trapframe));
 
@@ -736,8 +751,6 @@ sigret(void){
 
   // Turn off the flag indicates a user space signal handling for blocking incoming signals at this time.
   p->sighandler_flag = 0;
-
-  release(&p->lock);
 }
 
 void 
@@ -747,32 +760,18 @@ sigkill(void){
   p->killed = 1;
 
   if(p->state == SLEEPING){
-    // Wake process from sleep().
      p->state = RUNNABLE;
   }
 }
 
-
 void 
 sigstop(void){
   struct proc *p = myproc();
-
   p->freezed = 1;
-
-  if(p->state == SLEEPING){
-    // Wake process from sleep().
-    p->state = RUNNABLE;
-  }
 }
 
 void 
 sigcont(void){
   struct proc *p = myproc();
-
   p->freezed = 0;
-
-  if(p->state == SLEEPING){
-    // Wake process from sleep().
-    p->state = RUNNABLE;
-  }
 }
