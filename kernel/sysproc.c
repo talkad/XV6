@@ -121,7 +121,7 @@ sys_sigaction(void)
   if(argint(0, &signum) < 0)
     return -1;
 
-  if(argaddr(0, &act_addr) < 0)
+  if(argaddr(1, &act_addr) < 0)
     return -1;
 
   if(argaddr(2, &oldact_addr) < 0)

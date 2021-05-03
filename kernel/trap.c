@@ -9,7 +9,7 @@
 struct spinlock tickslock;
 uint ticks;
 
-extern char trampoline[], uservec[], userret[];
+extern char trampoline[], uservec[], userret[], sigret_end[], sigret_start[];
 
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
@@ -88,8 +88,6 @@ usertrap(void)
   if(which_dev == 2)
     yield();
 
-  sig_handler();
-
   usertrapret();
 }
 
@@ -100,6 +98,8 @@ void
 usertrapret(void)
 {
   struct proc *p = myproc();
+
+  // sig_handler();
 
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(), so turn off interrupts until
@@ -128,6 +128,8 @@ usertrapret(void)
   // set S Exception Program Counter to the saved user pc.
   w_sepc(p->trapframe->epc);
 
+  sig_handler();
+
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);
 
@@ -138,20 +140,76 @@ usertrapret(void)
   ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
 }
 
+void 
+user_sig_handler(int signum){
+  struct proc *p = myproc();
+
+  printf("execute user handler\n");
+
+  // copy signal handler to local variable
+  uint64 handler;
+  copyin(p->pagetable, (char *)&handler , (uint64) ((struct sigaction*)p->sig_handlers[signum])->sa_handler, sizeof(handler));
+
+  // // backup and update mask
+  // p->mask_backup = p->sig_mask;
+  // p->sig_mask = ((struct sigaction*)p->sig_handlers[signum])->sigmask;
+
+  // // indicate that this proccess at signal handling
+  // p->sighandler_flag = 1;
+
+  // // trapframe and stack pointer
+  // memmove(p->trap_backup, p->trapframe, sizeof(*p->trapframe));
+  // p->trapframe->sp -= sizeof(*p->trapframe);
+  // // p->trap_backup->sp = p->trapframe->sp;
+
+  // // copy current trapframe to the trapframe back up stack pointer
+  // copyout(p->pagetable, p->trap_backup->sp, (char *)p->trapframe, sizeof(*p->trapframe));
+  // // copyout(p->pagetable, p->trap_backup->sp, (char *)&p->trapframe, sizeof(*p->trapframe));
+
+  // // update program counter
+  // p->trapframe->epc = handler;
+
+  // printf("len(X) = %d\n", (kerneltrap - call_ret));
+
+  // // reduce trapframe stack pointer by currenct function length
+  // p->trapframe->sp -= (kerneltrap - call_ret);
+
+  // // copy this function to the proccess trapframe stack pointer
+  // copyout(p->pagetable, p->trap_backup->sp, (char *)call_ret, kerneltrap - call_ret);
+  // // copyout(p->pagetable, p->trap_backup->sp, (char *)&call_ret, kerneltrap - call_ret);
+
+  p->sighandler_flag = 1;
+  memmove(p->trap_backup, p->trapframe, sizeof(*p->trapframe));
+  p->mask_backup = p->sig_mask;
+  p->sig_mask = ((struct sigaction*)p->sig_handlers[signum])->sigmask;
+
+  int ret_size = (uint64)&sigret_end - (uint64)&sigret_start;
+  p->trapframe->sp -= ret_size;
+  copyout(p->pagetable, p->trapframe->sp, (char *)&sigret_start, ret_size);
+
+
+  // update registers
+  p->trapframe->a0 = signum;
+  p->trapframe->ra = p->trapframe->sp;
+
+  p->trapframe->epc = handler;
+
+  printf("execute user handler finished\n");
+  return;
+}
+
 void
 sig_handler(){
   struct proc *p = myproc();
-  
   int i;
 
   // handling signals 2.4
   for(i = 0; i < 32; i++){
-    if((p->pending_sig & (1<<i)) != 0 && (p->sig_mask & (1<<i)) == 0){
+    if((p->pending_sig & (1<<i)) != 0 && (p->sig_mask & (1<<i)) == 0 && p->sighandler_flag == 0){
+
+      printf("activate signal %d\n", i);
       
-      if((uint64)p->sig_handlers[i] == SIG_IGN){
-        p->pending_sig &= ~(1 << i);
-      }
-      else if((uint64)p->sig_handlers[i] == SIG_DFL){
+      if(p->sig_handlers[i] == (void*)SIG_DFL){
         if(i == SIGSTOP)
           sigstop();
         else if(i == SIGCONT)
@@ -159,60 +217,31 @@ sig_handler(){
         else
           sigkill();
       }
-      else if((uint64)p->sig_handlers[i] == SIGSTOP){
+      else if(p->sig_handlers[i] == (void*)SIGSTOP){
         sigstop();
       }
-      else if((uint64)p->sig_handlers[i] == SIGCONT){
+      else if(p->sig_handlers[i] == (void*)SIGCONT){
         sigcont();
       }
-      else if((uint64)p->sig_handlers[i] == SIGKILL){
+      else if(p->sig_handlers[i] == (void*)SIGKILL){
         sigkill();
       }
+      else if(p->sig_handlers[i] == (void*)SIG_IGN){
+        // do nothing
+      }
       else{
-
-      // copy signal handler to local variable
-      uint64 handler;
-      copyin(p->pagetable, (char *)&handler , (uint64) p->sig_handlers[i], sizeof(handler));
-
-      // backup and update mask
-      p->mask_backup = p->sig_mask;
-      p->sig_mask = p->mask_handlers[i];
-
-      // indicate that this proccess at signal handling
-      p->sighandler_flag = 1;
-
-      // trapframe and stack pointer
-      p->trapframe->sp -= sizeof(*p->trapframe);
-      p->trap_backup->sp = p->trapframe->sp;
-
-      // copy current trapframe to the trapframe back up stack pointer
-      copyout(p->pagetable, p->trap_backup->sp, (char *)p->trapframe, sizeof(*p->trapframe));
-
-      // update program counter
-      p->trapframe->epc = handler;
-
-      // reduce trapframe stack pointer by currenct function length
-      p->trapframe->sp -= (kerneltrap - call_ret);
-
-      // copy this function to the proccess trapframe stack pointer
-      copyout(p->pagetable, p->trap_backup->sp, (char *)call_ret, kerneltrap - call_ret);
-
-      // update registers
-      p->trapframe->a0 = i;
-      p->trapframe->ra = p->trapframe->sp;
+        user_sig_handler(i);
       }
 
     p->pending_sig &= ~(1 << i);
     }
   }
 
-  if(p->freezed)
-    yield();
-}
-
-void
-call_ret(){
-  sigret();
+  if(p->freezed){
+    printf("yields to cpu\n");
+    intr_on();
+    yield();  
+  }
 }
 
 // interrupts and exceptions from kernel code go here via kernelvec,

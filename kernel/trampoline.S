@@ -84,6 +84,15 @@ uservec:
         # jump to usertrap(), which does not return
         jr t0
 
+
+.globl sigret_start
+.globl sigret_end
+sigret_start:
+        li a7, 24  # SYS_sigret = 24
+        ecall;
+sigret_end:
+
+
 .globl userret
 userret:
         # userret(TRAPFRAME, pagetable)

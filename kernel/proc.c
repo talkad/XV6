@@ -128,6 +128,13 @@ found:
     return 0;
   }
 
+  // Allocate a backup trapframe page.
+  if((p->trap_backup = (struct trapframe *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -160,6 +167,9 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  if(p->trap_backup)
+  kfree((void*)p->trap_backup);
+  p->trap_backup = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -693,7 +703,8 @@ sigprocmask(uint sigmask){
 int
 sigaction(int signum, uint64 act, uint64 oldact){
   struct proc *p = myproc();
-  struct sigaction *action;
+  // struct sigaction *action;
+  struct sigaction local_act;
   
   if(signum < 0 || signum >=32)
     return -1;
@@ -701,38 +712,43 @@ sigaction(int signum, uint64 act, uint64 oldact){
   if(signum == SIGKILL || signum == SIGSTOP)
     return -1; // SIGKILL and SIGSTOP cannot be modified (or ignored)
 
+
   acquire(&p->lock);
 
-  if(oldact != 0){
-    action = ((struct sigaction*)oldact);
-
-    if(copyout(p->pagetable, (uint64)action->sa_handler, (void *)&p->sig_handlers[signum], sizeof(void *)) < 0 ||
-      copyout(p->pagetable, (uint64)&action->sigmask, (char *)&p->mask_handlers[signum], sizeof(uint)) < 0){
-        release(&p->lock);
-        return -1;
-      }
-
-  }
-
   if(act != 0){
-    action = ((struct sigaction*)act);
+    copyin(p->pagetable, (char*)&local_act, act , sizeof(struct sigaction));
 
-    if(copyin(p->pagetable, (void *)&p->sig_handlers[signum], (uint64)action->sa_handler, sizeof(void *)) < 0 ||
-      copyin(p->pagetable, (char *)&p->mask_handlers[signum], (uint64)&action->sigmask, sizeof(uint)) < 0){
+    if((local_act.sigmask & ((1 << SIGKILL) + (1 << SIGSTOP))) > 0){
         release(&p->lock);
-        return -1;
-      }
-
-    // action->sigmask &= ~((1 << SIGKILL) + (1 << SIGSTOP)); // SIGKILL and SIGSTOP cannot be blocked
-    // p->sig_handlers[signum] = ((struct sigaction*)act); 
+        return -1; // SIGKILL and SIGSTOP cannot be blocked
+    }
   }
 
+  if((uint64)p->sig_handlers[signum] < 32 ){ // kernel space handelr
+    
+    if(oldact != 0 && copyout(p->pagetable, (uint64)&((struct sigaction*)oldact)->sa_handler, (char*)&p->sig_handlers[signum], sizeof(void*)) < 0){
+        release(&p->lock);
+        return -1;
+    }
 
-//  if(oldact != 0 && copyout(p->pagetable, oldact, (char *)p->sig_handlers[signum],
-//                                   sizeof(*((struct sigaction*)oldact))) < 0) {
-//     release(&p->lock);
-//     return -1;
-//   }
+    if(act != 0){
+      memmove(&p->sigactions[signum], &local_act, sizeof(local_act));
+      p->sig_handlers[signum] = &p->sigactions[signum];
+    }
+  }
+  else{ // user space handelr
+    copyin(p->pagetable, (char*)&local_act, (uint64)&p->sig_handlers[signum] , sizeof(struct sigaction));
+
+    if(oldact != 0 && copyout(p->pagetable, (uint64)oldact, (char*)&local_act, sizeof(struct sigaction)) < -1){
+      release(&p->lock);
+      return -1;
+    }
+
+    if(act != 0){
+      copyin(p->pagetable, (char*)&p->sigactions[signum], act, sizeof(struct sigaction));
+      p->sig_handlers[signum] = &p->sigactions[signum];
+    }
+  }
 
   release(&p->lock);
 
@@ -766,12 +782,16 @@ sigkill(void){
 
 void 
 sigstop(void){
+  printf("sigstop activated\n");
+
   struct proc *p = myproc();
   p->freezed = 1;
 }
 
 void 
 sigcont(void){
+  printf("sigcont activated\n");
+
   struct proc *p = myproc();
   p->freezed = 0;
 }

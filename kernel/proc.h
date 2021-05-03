@@ -82,6 +82,11 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+struct sigaction {
+  void (*sa_handler) (int);
+  uint sigmask;
+};
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -111,13 +116,8 @@ struct proc {
   uint pending_sig;               // Pending signals
   uint sig_mask;                  // Signal mask
   void* sig_handlers[32];         // Signal handlers
-  uint mask_handlers[32];         // the mask of the handlers
   struct trapframe *trap_backup;  // User trap frame backup
   uint mask_backup;
-};
 
-
-struct sigaction {
-  void (*sa_handler) (int);
-  uint sigmask;
+  struct sigaction sigactions[32];// helper array 
 };

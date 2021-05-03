@@ -7,6 +7,11 @@
 #include "kernel/syscall.h"
 #include "kernel/memlayout.h"
 #include "kernel/riscv.h"
+#include "kernel/syscall.h"
+
+#include "kernel/spinlock.h"  // NEW INCLUDE FOR ASS2
+// #include "Csemaphore.h"   // NEW INCLUDE FOR ASS 2
+#include "kernel/proc.h"         // NEW INCLUDE FOR ASS 2, has all the signal definitions and sigaction definition.  Alternatively, copy the relevant things into user.h and include only it, and then no need to include spinlock.h .
 
 
 // test if child is killed (status = -1)
@@ -38,110 +43,175 @@ killstatus(char *s)
   exit(0);
 }
 
-// test if child process execution stopped
 void
-childfreezed(char *s) // todo
-{
-  int xst;
-  int counter;
-  int last_counter;
-  
-  for(int i = 0; i < 20; i++){
-    counter = 0;
+old_sigaction_test(){
+  struct sigaction action = {(void*)SIGSTOP, 0x8000};
+  struct sigaction oldaction;
 
-    int pid1 = fork();
-    if(pid1 < 0){
-      printf("%s: fork failed\n", s);
-      exit(1);
-    }
-    if(pid1 == 0){
-      while(1) {
-        counter++;
-      }
-      exit(0);
-    }
-    
-    sleep(2);
-    kill(pid1,SIGSTOP);
-    last_counter = counter;
-    sleep(2);
+  sigaction(20, &action, &oldaction);
 
-    kill(pid1,SIGKILL);
-    wait(&xst);
+  if((uint64)*oldaction.sa_handler != SIG_DFL)
+    exit(1);
 
-    if(last_counter != counter) {
-       printf("%d %d: values should be -equals\n", last_counter, counter);
-       exit(1);
-    }
-  }
+  sigaction(20, &action, &oldaction);
+
+  if((uint64)*oldaction.sa_handler != SIGSTOP || oldaction.sigmask != 0x8000)
+    exit(1);
+
   exit(0);
 }
 
-// // test sigaction
-// void
-// sigaction_test(){
-//   int status;
-//   int pid = fork();
-//   if(pid){
-//     sleep(3);
-//     kill(pid, 15);
-//     sleep(10);
-//     kill(pid, SIGCONT);
-//     printf("father is going to wait\n");
-//     wait(&status);
-//   }
-//   else{
-//     struct sigaction* action = (struct sigaction*) malloc(sizeof(sigaction));
-//     action->sa_handler = SIG_STOP;
-//     action->sigmask = 0;
-//     sigaction(15, action, NULL);
+// test sigaction
+void
+sigaction_test(){
+  int status;
+  int pid = fork();
+  if(pid){
+    sleep(3);
+    kill(pid, 15);
+    sleep(10);
+    kill(pid, SIGCONT);
+    printf("father is going to wait\n");
+    wait(&status);
+    exit(0);
+  }
+  else{
+    struct sigaction action = {(void*)SIGSTOP, 0};
+    sigaction(15, &action, 0);
 
-//     uint oldmask = sigprocmask(0x8000);
+    uint oldmask = sigprocmask(0x8000);
 
-//     if(oldmask != 0){
-//       printf("sigprocmask failed");
-//       exit(1);
-//     }
+    if(oldmask != 0){
+      printf("sigprocmask failed");
+      exit(1);
+    }
 
-//     sleep(10);
-//     printf("child signal is still blocked \n");
-//     oldmask = sigprocmask(0);
-//     if(oldmask != 0x8000){
-//       printf("sigprocmask failed");
-//       exit(1);
-//     }
-//     free(action);
-//     exit(0);
-//   }
+    sleep(20);
+    printf("child signal is still blocked \n");
+    oldmask = sigprocmask(0);
+    if(oldmask != 0x8000){
+      printf("sigprocmask failed");
+      exit(1);
+    }
 
-// }
+    exit(0);
+  }
+}
 
-// // change mask of a proccess
-// void
-// sigprocmaskTest(char *s)
-// {
-//   uint mask = 42;
-//   uint mask1 = sigprocmask(mask);
-//   uint mask2 = sigprocmask(mask);
+// test sigaction
+void
+THE_TEST_THAT_NEVER_ENDS(){
+  int status;
+  int pid = fork();
+  if(pid){
+    sleep(5);
+    printf("killed \n");
+    kill(pid, SIGSTOP);
+    wait(&status);
 
-//   int pid1 = fork();
-//   if(pid1 == 0){
-//     if(sigprocmask(0) != 84){
-//       printf("the proc mask value should be like the father");
-//       exit(1);
-//     }
-//     exit(0);
-//   }
+    printf("noooooooooooooooooooooooooooooo \n");
 
-//   if(mask1 != 0 || mask2 != 42){
-//     printf("proc mask didn't change");
-//     exit(1);
-//   }
+    exit(0);
+  }
+  else{
+    sleep(10);
+    while(1)
+      printf("a");
+
+    exit(0);
+  }
+}
+
+// test sigaction
+void
+THE_TEST_THAT_NEVER_ENDS_ADVANCED(){
+  int status;
+  int pid = fork();
+  if(pid){
+    sleep(5);
+    printf("killed \n");
+    kill(pid, 31);
+    wait(&status);
+
+    printf("noooooooooooooooooooooooooooooo \n");
+
+    exit(0);
+  }
+  else{
+    struct sigaction action = {(void*)SIGSTOP, 0};
+    sigaction(31, &action, 0);
+
+    sleep(10);
+    while(1)
+      printf("a");
+
+    exit(0);
+  }
+}
+
+// change mask of a proccess
+void
+sigprocmaskTest(char *s)
+{
+  uint mask = 42;
+  uint mask1 = sigprocmask(mask);
+
+  int pid1 = fork();
+  if(pid1 == 0){
+    if(sigprocmask(0) != 42){
+      printf("the proc mask value should be like the father");
+      exit(1);
+    }
+    exit(0);
+  }
+
+  if(mask1 != 0 || sigprocmask(mask) != 42){
+    printf("proc mask didn't change");
+    exit(1);
+  }
   
-//   exit(0);
-// }
+  exit(0);
+}
 
+int wait_sig = 0;
 
+void test_handler(int signum){
+    printf("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa test handler\n");
+    wait_sig = 1;
+    printf("Received sigtest\n");
+}
+
+void signal_test(char *s){
+    int pid;
+    int testsig;
+    testsig=15;
+    struct sigaction act = {test_handler, (uint)(1 << 29)};
+    struct sigaction old;
+
+    printf("hallo333? %p\n", test_handler);
+
+    sigprocmask(0);
+    sigaction(testsig, &act, &old);
+    if((pid = fork()) == 0){
+        while(!wait_sig)
+            sleep(1);
+        exit(0);
+    }
+    kill(pid, testsig);
+    wait(&pid);
+    printf("Finished testing signals\n");
+}
+
+void test_handler2(int signum){
+    printf("test_handler2 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n");
+}
+
+void user_handler_test(char *s){
+    struct sigaction act = {test_handler2, 0};
+
+    sigaction(31, &act, 0);
+    kill(getpid(), 31);
+}
 
 //
 // use sbrk() to count how many free physical memory pages there are.
@@ -255,9 +325,14 @@ main(int argc, char *argv[])
     void (*f)(char *);
     char *s;
   } tests[] = {
-    {killstatus, "killstatus"},
-    {childfreezed, "childfreezed"},
+    // {killstatus, "killstatus"},
+    // {old_sigaction_test, "old_sigaction"},
+    // {sigaction_test, "sigaction_test"},
     // {sigprocmaskTest, "sigprocmaskTest"},
+    // {signal_test, "signal_test"},
+
+    // {THE_TEST_THAT_NEVER_ENDS_ADVANCED, "THE_TEST_THAT_NEVER_ENDS_ADVANCED"},
+    {user_handler_test, "user_handler_test"},
     { 0, 0},
   };
 
