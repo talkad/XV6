@@ -142,7 +142,8 @@ THE_TEST_THAT_NEVER_ENDS_ADVANCED(){
     sigaction(31, &action, 0);
 
     sleep(10);
-    while(1);
+    while(1)
+      printf("a");
 
     exit(0);
   }
@@ -181,19 +182,23 @@ void test_handler(int signum){
 }
 
 void signal_test(char *s){
+  printf("asaaaaaaaaaaaaaaaaaaaaaaaaaa\n");
     int pid;
     int testsig;
     testsig=15;
     struct sigaction act = {test_handler, (uint)(1 << 29)};
     struct sigaction old;
 
-    printf("hallo333? %p\n", test_handler);
+    printf("cccccccccccccccccccc\n");
 
     sigprocmask(0);
     sigaction(testsig, &act, &old);
+    printf("ddddddddddd\n");
     if((pid = fork()) == 0){
+      printf("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
         while(!wait_sig)
-            sleep(1);
+          printf("%d", wait_sig);
+            // sleep(1);
         exit(0);
     }
     kill(pid, testsig);
@@ -204,19 +209,37 @@ void signal_test(char *s){
 // int num = 0;
 
 void test_handler2(int signum){
-    printf("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbb\n");
+    printf("oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo it's working\n");
     // num = 1;
 }
 
 void user_handler_test(char *s){
     struct sigaction act = {test_handler2, 0x8000};
 
-    printf("WTF %p ? \n", test_handler2);
-
     sigaction(31, &act, 0);
-    // printf("aaaaa %d\n", num);
     kill(getpid(), 31);
-    // printf("bbbbb %d\n", num);
+}
+
+
+void test_handler3(int signum){
+    printf("111111111111111111111111111111111 it's working\n");
+    // num = 1;
+}
+
+void test_handler4(int signum){
+    printf("222222222222222222222222222222222 it's working\n");
+    // num = 1;
+}
+
+void user_handler_test2(char *s){
+    struct sigaction act3 = {test_handler3, 0x8000};
+    struct sigaction act4 = {test_handler4, 0x8000};
+
+    sigaction(30, &act3, 0);
+    kill(getpid(), 30);
+
+    sigaction(31, &act4, 0);
+    kill(getpid(), 31);
 }
 
 //
@@ -338,8 +361,8 @@ main(int argc, char *argv[])
     // {signal_test, "signal_test"},
 
           // {THE_TEST_THAT_NEVER_ENDS, "THE_TEST_THAT_NEVER_ENDS"},
-    // {THE_TEST_THAT_NEVER_ENDS_ADVANCED, "THE_TEST_THAT_NEVER_ENDS_ADVANCED"},
-    {user_handler_test, "user_handler_test"},
+          // {THE_TEST_THAT_NEVER_ENDS_ADVANCED, "THE_TEST_THAT_NEVER_ENDS_ADVANCED"},
+    {user_handler_test2, "user_handler_test"},
     { 0, 0},
   };
 

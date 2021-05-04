@@ -332,7 +332,10 @@ fork(void)
   // inherit sigMask and the handlers of the parent proccess
   np->sig_mask = p->sig_mask;
   
-  for(i = 0; i < 32; i++)
+  for(i = 0; i < 32; i++){
+    np->sigactions[i].sa_handler = p->sigactions[i].sa_handler;
+    np->sigactions[i].sigmask = p->sigactions[i].sigmask;
+  }
     np->sig_handlers[i] = p->sig_handlers[i];
 
   release(&wait_lock);
@@ -714,7 +717,6 @@ sigaction(int signum, const struct sigaction *act, struct sigaction *oldact){
   if(signum == SIGKILL || signum == SIGSTOP)
     return -1; // SIGKILL and SIGSTOP cannot be modified (or ignored)
 
-
   acquire(&p->lock);
 
   if(act != 0){
@@ -727,7 +729,7 @@ sigaction(int signum, const struct sigaction *act, struct sigaction *oldact){
     }
   }
 
-  if((uint64)p->sig_handlers[signum] < 32 ){ // kernel space handelr
+  if((uint64)p->sig_handlers[signum] < 32){ // kernel space handelr
 
     if(oldact != 0 && copyout(p->pagetable, (uint64)&oldact->sa_handler, (char*)&p->sig_handlers[signum], sizeof(void*)) < 0){
         release(&p->lock);

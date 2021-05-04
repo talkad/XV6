@@ -192,10 +192,9 @@ user_sig_handler(int signum){
   p->trapframe->a0 = signum;
   p->trapframe->ra = p->trapframe->sp;
 
-  printf("epc %p\n", p->trapframe->epc);
   p->trapframe->epc = (uint64)handler.sa_handler;
-  printf("epc %p\n", p->trapframe->epc);
 
+  w_sepc(p->trapframe->epc);
 
   printf("execute user handler finished\n");
   return;
