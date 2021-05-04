@@ -89,8 +89,8 @@ uservec:
 .globl sigret_end
 sigret_start:
         li a7, 24  # SYS_sigret = 24
-        ecall;
-        ret;
+        ecall
+        ret
 sigret_end:
 
 

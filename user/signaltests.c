@@ -354,10 +354,10 @@ main(int argc, char *argv[])
     void (*f)(char *);
     char *s;
   } tests[] = {
-          // {killstatus, "killstatus"},
-          // {old_sigaction_test, "old_sigaction"},
+          {killstatus, "killstatus"},
+          {old_sigaction_test, "old_sigaction"},
     // {sigaction_test, "sigaction_test"},
-            // {sigprocmaskTest, "sigprocmaskTest"},
+          {sigprocmaskTest, "sigprocmaskTest"},
     // {signal_test, "signal_test"},
 
           // {THE_TEST_THAT_NEVER_ENDS, "THE_TEST_THAT_NEVER_ENDS"},

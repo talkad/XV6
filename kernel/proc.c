@@ -335,8 +335,12 @@ fork(void)
   for(i = 0; i < 32; i++){
     np->sigactions[i].sa_handler = p->sigactions[i].sa_handler;
     np->sigactions[i].sigmask = p->sigactions[i].sigmask;
+
+    if((uint64)p->sig_handlers[i] < 32)
+      np->sig_handlers[i] = p->sig_handlers[i];
+    else
+      np->sig_handlers[i] = & np->sigactions[i];
   }
-    np->sig_handlers[i] = p->sig_handlers[i];
 
   release(&wait_lock);
 
@@ -744,21 +748,14 @@ sigaction(int signum, const struct sigaction *act, struct sigaction *oldact){
         p->sig_handlers[signum] = newaction.sa_handler;
       }
       else{
-        printf("boi what?\n");
-        // copyin(p->pagetable, (char*)&p->sig_handlers[signum], (uint64)&act, sizeof(struct sigaction));
-        // copyin(p->pagetable, (char*)&p->sig_handlers[signum], (uint64)act, sizeof(struct sigaction));
 
-        printf("aaaaaaaaaaaaaaaaaaaaaaaaaaaat %p\n", newaction.sa_handler);
+        printf("handler address %p\n", newaction.sa_handler);
 
         p->sigactions[signum].sa_handler = newaction.sa_handler;
         p->sigactions[signum].sigmask = newaction.sigmask;
 
         p->sig_handlers[signum] = &p->sigactions[signum];
 
-        // printf("sigaction address to user struct %p\n", ((struct sigaction*)p->sig_handlers[signum])->sa_handler);
-
-        // printf("sigaction address to user struct sa handler %p\n", ((struct sigaction*)p->sig_handlers[signum])->sa_handler);
-        // p->sig_handlers[signum] = act;
       }
     }
   }
@@ -783,9 +780,6 @@ sigaction(int signum, const struct sigaction *act, struct sigaction *oldact){
 
         p->sig_handlers[signum] = &p->sigactions[signum];
       }
-
-      // copyout(p->pagetable, (uint64)p->sig_handlers[signum], (char*)&newaction, sizeof(struct sigaction));
-      // p->sig_handlers[signum] = &p->sigactions[signum];
     }
   }
 
@@ -823,7 +817,7 @@ sigkill(void){
 
 void 
 sigstop(void){
-  printf("sigstop activated aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n");
+  printf("sigstop activated\n");
 
   struct proc *p = myproc();
   p->freezed = 1;

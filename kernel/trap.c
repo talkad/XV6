@@ -148,50 +148,26 @@ user_sig_handler(int signum){
   struct sigaction handler;
   memmove((void*)&handler , (char*)&p->sigactions[signum], sizeof(struct sigaction));
 
-  // printf("user sig handler %p %p? \n", handler.sa_handler, handler.sigmask);
-
-  // // backup and update mask
-  // p->mask_backup = p->sig_mask;
-  // p->sig_mask = handler.sigmask;
-
-  // // indicate that this proccess at signal handling
-  // p->sighandler_flag = 1;
-
-  // // trapframe and stack pointer
-  //                             // memmove(p->trap_backup, p->trapframe, sizeof(*p->trapframe));
-  // p->trapframe->sp -= sizeof(struct trapframe);
-  // p->trap_backup->sp = p->trapframe->sp;
-
-  // // copy current trapframe to the trapframe back up stack pointer
-  // copyout(p->pagetable, p->trap_backup->sp, (char *)&p->trapframe, sizeof(struct trapframe));
-  // // copyout(p->pagetable, p->trap_backup->sp, (char *)&p->trapframe, sizeof(*p->trapframe));
-
-  // // update program counter
-  // p->trapframe->epc = (uint64)handler.sa_handler;
-
-  // // reduce trapframe stack pointer by currenct function length
-  // int ret_size = (uint64)&sigret_end - (uint64)&sigret_start;
-  // p->trapframe->sp -= ret_size;
-
-  // // copy this function to the proccess trapframe stack pointer
-  // copyout(p->pagetable, p->trap_backup->sp, (char *)&sigret_start, ret_size);
-  // // copyout(p->pagetable, p->trap_backup->sp, (char *)&call_ret, kerneltrap - call_ret);
-
-
-  p->sighandler_flag = 1;
+  // backup and update mask
   memmove(p->trap_backup, p->trapframe, sizeof(*p->trapframe));
   p->mask_backup = p->sig_mask;
   p->sig_mask =  handler.sigmask;
 
+ // indicate that this proccess at signal handling
+  p->sighandler_flag = 1;
+
+  // reduce trapframe stack pointer by currenct function length
   int ret_size = (uint64)&sigret_end - (uint64)&sigret_start;
   p->trapframe->sp -= ret_size;
   
+  // copy this function to the proccess trapframe stack pointer
   copyout(p->pagetable, p->trapframe->sp, (char *)&sigret_start, ret_size);
 
   // update registers
   p->trapframe->a0 = signum;
   p->trapframe->ra = p->trapframe->sp;
 
+  // update program counter
   p->trapframe->epc = (uint64)handler.sa_handler;
 
   w_sepc(p->trapframe->epc);
