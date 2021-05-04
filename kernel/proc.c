@@ -150,6 +150,7 @@ found:
   p->context.sp = p->kstack + PGSIZE;
 
   p->sig_mask = 0;
+  p->pending_sig = 0;
 
   // Set up the SIG_DFL for all signals
   for(i = 0; i < 32; i++)
