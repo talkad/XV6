@@ -127,7 +127,7 @@ sys_sigaction(void)
   if(argaddr(2, &oldact_addr) < 0)
     return -1;
 
-  return sigaction(signum, act_addr, oldact_addr);
+  return sigaction(signum, (struct sigaction*)act_addr, (struct sigaction*)oldact_addr);
 }
 
 uint64

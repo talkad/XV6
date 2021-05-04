@@ -613,6 +613,8 @@ kill(int pid, int signum)
     acquire(&p->lock);
     if(p->pid == pid){
 
+      printf("killed pid %d with %d\n", pid, signum);
+
       p->pending_sig |= 1<<signum; 
 
       if(p->state == UNUSED || p->state == ZOMBIE){ // failure - the process does not exists or has terminated execution
@@ -701,9 +703,9 @@ sigprocmask(uint sigmask){
 }
 
 int
-sigaction(int signum, uint64 act, uint64 oldact){
+sigaction(int signum, const struct sigaction *act, struct sigaction *oldact){
   struct proc *p = myproc();
-  // struct sigaction *action;
+  struct sigaction newaction;
   struct sigaction local_act;
   
   if(signum < 0 || signum >=32)
@@ -716,28 +718,51 @@ sigaction(int signum, uint64 act, uint64 oldact){
   acquire(&p->lock);
 
   if(act != 0){
-    copyin(p->pagetable, (char*)&local_act, act , sizeof(struct sigaction));
 
-    if((local_act.sigmask & ((1 << SIGKILL) + (1 << SIGSTOP))) > 0){
+    copyin(p->pagetable, (char*)&newaction, (uint64)act , sizeof(struct sigaction));
+
+    if((newaction.sigmask & ((1 << SIGKILL) + (1 << SIGSTOP))) > 0){
         release(&p->lock);
         return -1; // SIGKILL and SIGSTOP cannot be blocked
     }
   }
 
   if((uint64)p->sig_handlers[signum] < 32 ){ // kernel space handelr
-    
-    if(oldact != 0 && copyout(p->pagetable, (uint64)&((struct sigaction*)oldact)->sa_handler, (char*)&p->sig_handlers[signum], sizeof(void*)) < 0){
+
+    if(oldact != 0 && copyout(p->pagetable, (uint64)&oldact->sa_handler, (char*)&p->sig_handlers[signum], sizeof(void*)) < 0){
         release(&p->lock);
         return -1;
     }
 
-    if(act != 0){
-      memmove(&p->sigactions[signum], &local_act, sizeof(local_act));
-      p->sig_handlers[signum] = &p->sigactions[signum];
+    if(act != 0){ // 3.2
+
+      if((uint64)newaction.sa_handler < 32)
+      {
+        printf("boiiiiiiiiiiiiiiiiiiiiiiiiiiii\n");
+        p->sig_handlers[signum] = newaction.sa_handler;
+      }
+      else{
+        printf("boi what?\n");
+        // copyin(p->pagetable, (char*)&p->sig_handlers[signum], (uint64)&act, sizeof(struct sigaction));
+        // copyin(p->pagetable, (char*)&p->sig_handlers[signum], (uint64)act, sizeof(struct sigaction));
+
+        printf("aaaaaaaaaaaaaaaaaaaaaaaaaaaat %p\n", newaction.sa_handler);
+
+        p->sigactions[signum].sa_handler = newaction.sa_handler;
+        p->sigactions[signum].sigmask = newaction.sigmask;
+
+        p->sig_handlers[signum] = &p->sigactions[signum];
+
+        // printf("sigaction address to user struct %p\n", ((struct sigaction*)p->sig_handlers[signum])->sa_handler);
+
+        // printf("sigaction address to user struct sa handler %p\n", ((struct sigaction*)p->sig_handlers[signum])->sa_handler);
+        // p->sig_handlers[signum] = act;
+      }
     }
   }
   else{ // user space handelr
-    copyin(p->pagetable, (char*)&local_act, (uint64)&p->sig_handlers[signum] , sizeof(struct sigaction));
+
+    copyin(p->pagetable, (char*)&local_act, (uint64)p->sig_handlers[signum] , sizeof(struct sigaction));
 
     if(oldact != 0 && copyout(p->pagetable, (uint64)oldact, (char*)&local_act, sizeof(struct sigaction)) < -1){
       release(&p->lock);
@@ -745,8 +770,20 @@ sigaction(int signum, uint64 act, uint64 oldact){
     }
 
     if(act != 0){
-      copyin(p->pagetable, (char*)&p->sigactions[signum], act, sizeof(struct sigaction));
-      p->sig_handlers[signum] = &p->sigactions[signum];
+
+      if((uint64)newaction.sa_handler < 32)
+      {
+        p->sig_handlers[signum] = newaction.sa_handler;
+      }
+      else{
+        p->sigactions[signum].sa_handler = newaction.sa_handler;
+        p->sigactions[signum].sigmask = newaction.sigmask;
+
+        p->sig_handlers[signum] = &p->sigactions[signum];
+      }
+
+      // copyout(p->pagetable, (uint64)p->sig_handlers[signum], (char*)&newaction, sizeof(struct sigaction));
+      // p->sig_handlers[signum] = &p->sigactions[signum];
     }
   }
 
@@ -757,6 +794,8 @@ sigaction(int signum, uint64 act, uint64 oldact){
 
 void 
 sigret(void){
+  printf("sigret \n");
+
   struct proc *p = myproc();
 
   // Restore the process original trapframe
@@ -782,7 +821,7 @@ sigkill(void){
 
 void 
 sigstop(void){
-  printf("sigstop activated\n");
+  printf("sigstop activated aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n");
 
   struct proc *p = myproc();
   p->freezed = 1;

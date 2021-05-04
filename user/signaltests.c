@@ -50,12 +50,12 @@ old_sigaction_test(){
 
   sigaction(20, &action, &oldaction);
 
-  if((uint64)*oldaction.sa_handler != SIG_DFL)
+  if(oldaction.sa_handler != (void*)SIG_DFL)
     exit(1);
 
   sigaction(20, &action, &oldaction);
 
-  if((uint64)*oldaction.sa_handler != SIGSTOP || oldaction.sigmask != 0x8000)
+  if(oldaction.sa_handler != (void*)SIGSTOP)
     exit(1);
 
   exit(0);
@@ -142,8 +142,7 @@ THE_TEST_THAT_NEVER_ENDS_ADVANCED(){
     sigaction(31, &action, 0);
 
     sleep(10);
-    while(1)
-      printf("a");
+    while(1);
 
     exit(0);
   }
@@ -202,15 +201,22 @@ void signal_test(char *s){
     printf("Finished testing signals\n");
 }
 
+// int num = 0;
+
 void test_handler2(int signum){
-    printf("test_handler2 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n");
+    printf("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbb\n");
+    // num = 1;
 }
 
 void user_handler_test(char *s){
-    struct sigaction act = {test_handler2, 0};
+    struct sigaction act = {test_handler2, 0x8000};
+
+    printf("WTF %p ? \n", test_handler2);
 
     sigaction(31, &act, 0);
+    // printf("aaaaa %d\n", num);
     kill(getpid(), 31);
+    // printf("bbbbb %d\n", num);
 }
 
 //
@@ -325,12 +331,13 @@ main(int argc, char *argv[])
     void (*f)(char *);
     char *s;
   } tests[] = {
-    // {killstatus, "killstatus"},
-    // {old_sigaction_test, "old_sigaction"},
+          // {killstatus, "killstatus"},
+          // {old_sigaction_test, "old_sigaction"},
     // {sigaction_test, "sigaction_test"},
-    // {sigprocmaskTest, "sigprocmaskTest"},
+            // {sigprocmaskTest, "sigprocmaskTest"},
     // {signal_test, "signal_test"},
 
+          // {THE_TEST_THAT_NEVER_ENDS, "THE_TEST_THAT_NEVER_ENDS"},
     // {THE_TEST_THAT_NEVER_ENDS_ADVANCED, "THE_TEST_THAT_NEVER_ENDS_ADVANCED"},
     {user_handler_test, "user_handler_test"},
     { 0, 0},

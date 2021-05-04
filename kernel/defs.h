@@ -107,7 +107,7 @@ int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 uint            sigprocmask(uint sigmask);
-int             sigaction(int signum, uint64 act, uint64 oldact);
+int             sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
 void            sigret(void);
 void            sigstop(void);
 void            sigkill(void);
