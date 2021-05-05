@@ -135,3 +135,47 @@ sys_sigret(void){
   sigret();
   return 0;
 }
+
+uint64
+sys_kthread_create(void){
+  uint64 startfunc_addr;
+  uint64 stack_addr;
+
+  if(argaddr(0, &startfunc_addr) < 0)
+    return -1;
+
+  if(argaddr(1, &stack_addr) < 0)
+    return -1;
+
+  return kthread_create((void (*)())startfunc_addr, (void*)stack_addr);
+}
+
+uint64
+sys_kthread_id(void){
+  return kthread_id();
+}
+
+uint64
+sys_kthread_exit(void){
+  int status;
+
+  if(argint(0, &status) < 0)
+    return -1;
+
+  kthread_exit(status);
+  return 0;
+}
+
+uint64
+sys_kthread_join(void){
+  int thread_id;
+  uint64 status_addr;
+
+  if(argint(0, &thread_id) < 0)
+    return -1;
+
+  if(argaddr(1, &status_addr) < 0)
+    return -1;
+
+  return kthread_join(thread_id, (int*)status_addr);
+}

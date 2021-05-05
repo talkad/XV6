@@ -112,6 +112,10 @@ void            sigret(void);
 void            sigstop(void);
 void            sigkill(void);
 void            sigcont(void);
+int             kthread_create(void (*start_func)(), void *stack);
+int             kthread_id(void);
+void            kthread_exit(int);
+int             kthread_join(int, int*);
 
 // swtch.S
 void            swtch(struct context*, struct context*);

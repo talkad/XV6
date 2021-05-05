@@ -1,3 +1,6 @@
+#define NTHREAD 8
+#define MAX_STACK_SIZE 4000
+
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -21,6 +24,7 @@ struct context {
 // Per-CPU state.
 struct cpu {
   struct proc *proc;          // The process running on this cpu, or null.
+  struct thread *thread;
   struct context context;     // swtch() here to enter scheduler().
   int noff;                   // Depth of push_off() nesting.
   int intena;                 // Were interrupts enabled before push_off()?
@@ -80,11 +84,26 @@ struct trapframe {
   /* 280 */ uint64 t6;
 };
 
-enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+enum procstate { UNUSED, EMBRYO, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+// enum state { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 struct sigaction {
   void (*sa_handler) (int);
   uint sigmask;
+};
+
+struct thread {
+  struct spinlock lock;
+  int tid;
+  int xstate;
+  enum procstate state;
+  uint64 kstack;
+  struct proc *parent;
+  struct trapframe *trapframe;
+  struct context context;
+  void *chan;
+  int killed;
+  struct trapframe *trap_backup;
 };
 
 // Per-process state
@@ -103,6 +122,7 @@ struct proc {
   // proc_tree_lock must be held when using this:
   struct proc *parent;         // Parent process
 
+
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;                  // Virtual address of kernel stack
   uint64 sz;                      // Size of process memory (bytes)
@@ -120,4 +140,10 @@ struct proc {
   uint mask_backup;
 
   struct sigaction sigactions[32];// helper array 
+  struct thread threads[NTHREAD];
 };
+
+int kthread_create( void ( *start_func ) () , void *stack ) ;
+int kthread_id();
+void kthread_exit(int status);
+int kthread_join(int thread_id, int *status);

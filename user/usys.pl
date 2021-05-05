@@ -38,3 +38,7 @@ entry("sleep");
 entry("uptime");
 entry("sigaction");
 entry("sigprocmask");
+entry("kthread_create");
+entry("kthread_id");
+entry("kthread_exit");
+entry("kthread_join");
