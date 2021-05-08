@@ -18,6 +18,8 @@ struct spinlock pid_lock;
 int nexttid = 1;
 struct spinlock tid_lock;
 
+static int semaphore_array[MAX_BSEM] = {[0 ... (MAX_BSEM - 1)] = UNLOCKED};
+
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
@@ -49,13 +51,22 @@ proc_mapstacks(pagetable_t kpgtbl) {
 void
 procinit(void)
 {
+  // printf("%d\n", __LINE__);
   struct proc *p;
-  
+  struct thread *t;
+
   initlock(&pid_lock, "nextpid");
+  initlock(&tid_lock, "nexttid");
   initlock(&wait_lock, "wait_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-      p->kstack = KSTACK((int) (p - proc));
+      for(t = p->threads; t < &p->threads[NTHREAD]; t++){
+        initlock(&t->lock, "thread");
+        t->state = UNUSED;
+        t->kstack = 0;
+      }
+    p->threads[0].kstack = KSTACK((int) (p - proc));
+    
   }
 }
 
@@ -81,10 +92,7 @@ mycpu(void) {
 // Return the current struct proc *, or zero if none.
 struct proc*
 myproc(void) {
-  push_off();
-  struct cpu *c = mycpu();
-  struct proc *p = c->proc;
-  pop_off();
+  struct proc *p = mythread()->parent;
   return p;
 }
 
@@ -125,11 +133,15 @@ alloctid() {
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
+
+static struct thread* allocthread(struct proc*);
+
 static struct proc*
 allocproc(void)
 {
+  // printf("%d\n", __LINE__);
   struct proc *p;
-  int i;
+  int i = 0;
 
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
@@ -145,19 +157,39 @@ found:
   p->pid = allocpid();
   p->state = USED;
 
+  struct thread *maint = p->threads;
+  acquire(&maint->lock);
+  maint->state = USED;
+  maint->tid = alloctid();
+  maint->parent = p;
+  memset(&maint->context, 0, sizeof(maint->context));
+  maint->context.ra = (uint64)forkret;
+  maint->context.sp = maint->kstack + PGSIZE;
   // Allocate a trapframe page.
-  if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+  struct thread *t;
+  struct trapframe *tf;
+  struct trapframe *backup_tf;
+  
+  if((tf = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
     release(&p->lock);
     return 0;
   }
 
   // Allocate a backup trapframe page.
-  if((p->trap_backup = (struct trapframe *)kalloc()) == 0){
+  if((backup_tf = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
     release(&p->lock);
     return 0;
   }
+
+  for(t = p->threads; t < &p->threads[NTHREAD]; t++){
+    t->trapframe = tf + i;
+    t->trap_backup = backup_tf + i;
+    ++i;
+  }
+
+  release(&maint->lock);
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
@@ -167,11 +199,17 @@ found:
     return 0;
   }
 
+  // if(allocthread(p) == 0){
+  //   freeproc(p);
+  //   release(&p->lock);
+  //   return 0;
+  // }
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
-  memset(&p->context, 0, sizeof(p->context));
-  p->context.ra = (uint64)forkret;
-  p->context.sp = p->kstack + PGSIZE;
+  // memset(&p->context, 0, sizeof(p->context));
+  // p->context.ra = (uint64)forkret;
+  // p->context.sp = p->kstack + PGSIZE;
 
   p->sig_mask = 0;
   p->pending_sig = 0;
@@ -186,15 +224,18 @@ found:
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
+
+static void freethread(struct thread*);
+
 static void
 freeproc(struct proc *p)
 {
-  if(p->trapframe)
-    kfree((void*)p->trapframe);
-  p->trapframe = 0;
-  if(p->trap_backup)
-  kfree((void*)p->trap_backup);
-  p->trap_backup = 0;
+  // printf("%d\n", __LINE__);
+  struct thread *t;
+
+  for(t = p->threads; t < &p->threads[NTHREAD]; t++)
+    freethread(t);
+
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -202,7 +243,6 @@ freeproc(struct proc *p)
   p->pid = 0;
   p->parent = 0;
   p->name[0] = 0;
-  p->chan = 0;
   p->killed = 0;
   p->freezed = 0;
   p->sighandler_flag = 0;
@@ -213,8 +253,8 @@ freeproc(struct proc *p)
 // Create a user page table for a given process,
 // with no user memory, but with trampoline pages.
 pagetable_t
-proc_pagetable(struct proc *p)
-{
+proc_pagetable(struct proc *p){
+// {printf("%d\n", __LINE__);
   pagetable_t pagetable;
 
   // An empty page table.
@@ -234,7 +274,7 @@ proc_pagetable(struct proc *p)
 
   // map the trapframe just below TRAMPOLINE, for trampoline.S.
   if(mappages(pagetable, TRAPFRAME, PGSIZE,
-              (uint64)(p->trapframe), PTE_R | PTE_W) < 0){
+              (uint64)(p->threads[0].trapframe), PTE_R | PTE_W) < 0){
     uvmunmap(pagetable, TRAMPOLINE, 1, 0);
     uvmfree(pagetable, 0);
     return 0;
@@ -269,6 +309,7 @@ uchar initcode[] = {
 void
 userinit(void)
 {
+  // printf("%d\n", __LINE__);
   struct proc *p;
 
   p = allocproc();
@@ -280,13 +321,14 @@ userinit(void)
   p->sz = PGSIZE;
 
   // prepare for the very first "return" from kernel to user.
-  p->trapframe->epc = 0;      // user program counter
-  p->trapframe->sp = PGSIZE;  // user stack pointer
+  p->threads[0].trapframe->epc = 0;      // user program counter
+  p->threads[0].trapframe->sp = PGSIZE;  // user stack pointer
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
+  p->threads[0].state = RUNNABLE;
 
   release(&p->lock);
 }
@@ -299,15 +341,21 @@ growproc(int n)
   uint sz;
   struct proc *p = myproc();
 
+  acquire(&p->lock);
+
   sz = p->sz;
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+      release(&p->lock);
       return -1;
     }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
+
+  release(&p->lock);
+
   return 0;
 }
 
@@ -316,9 +364,11 @@ growproc(int n)
 int
 fork(void)
 {
+  // printf("%d\n", __LINE__);
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
+  struct thread *t = mythread();
 
   // Allocate process.
   if((np = allocproc()) == 0){
@@ -334,10 +384,10 @@ fork(void)
   np->sz = p->sz;
 
   // copy saved user registers.
-  *(np->trapframe) = *(p->trapframe);
+  *(np->threads[0].trapframe) = *(t->trapframe);
 
   // Cause fork to return 0 in the child.
-  np->trapframe->a0 = 0;
+  np->threads[0].trapframe->a0 = 0;
 
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
@@ -371,6 +421,7 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+  np->threads[0].state = RUNNABLE;
   release(&np->lock);
 
   return pid;
@@ -397,7 +448,9 @@ reparent(struct proc *p)
 void
 exit(int status)
 {
+  // printf("%d\n", __LINE__);
   struct proc *p = myproc();
+  struct thread *t = mythread();
 
   if(p == initproc)
     panic("init exiting");
@@ -425,13 +478,34 @@ exit(int status)
   wakeup(p->parent);
   
   acquire(&p->lock);
+  acquire(&t->lock);
 
   p->xstate = status;
   p->state = ZOMBIE;
 
-  release(&wait_lock);
+  t->xstate = status;
+  t->state = ZOMBIE;
 
+  struct thread *itrthread;
+  for(itrthread = p->threads; itrthread < &p->threads[NTHREAD]; t++){
+   
+    if(itrthread != t){
+       acquire(&itrthread->lock);
+      itrthread->killed = 1;
+      if(itrthread->state == SLEEPING){
+        itrthread->state = RUNNABLE;
+      }
+      release(&itrthread->lock);
+    }
+    
+  }
+
+  release(&p->lock);
+  release(&wait_lock);
+  
   // Jump into the scheduler, never to return.
+
+
   sched();
   panic("zombie exit");
 }
@@ -441,6 +515,7 @@ exit(int status)
 int
 wait(uint64 addr)
 {
+  // printf("%d\n", __LINE__);
   struct proc *np;
   int havekids, pid;
   struct proc *p = myproc();
@@ -495,11 +570,13 @@ wait(uint64 addr)
 void
 scheduler(void)
 {
+  // printf("%d\n", __LINE__);
   struct proc *p;
   struct thread *t;
   struct cpu *c = mycpu();
   
-  c->proc = 0;
+  // c->proc = 0;
+  c->thread = 0;
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
@@ -510,7 +587,9 @@ scheduler(void)
         if(t->state == RUNNABLE){
           t->state = RUNNING;
           c->thread = t;
+          // printf("%d\n", __LINE__);
           swtch(&c->context, &t->context);
+          // printf("%d\n", __LINE__);
           c->thread = 0;
         }
         release(&t->lock);
@@ -529,20 +608,21 @@ scheduler(void)
 void
 sched(void)
 {
+  // printf("%d\n", __LINE__);
   int intena;
-  struct proc *p = myproc();
+  struct thread *t = mythread();
 
-  if(!holding(&p->lock))
+  if(!holding(&t->lock))
     panic("sched p->lock");
   if(mycpu()->noff != 1)
     panic("sched locks");
-  if(p->state == RUNNING)
+  if(t->state == RUNNING)
     panic("sched running");
   if(intr_get())
     panic("sched interruptible");
 
   intena = mycpu()->intena;
-  swtch(&p->context, &mycpu()->context);
+  swtch(&t->context, &mycpu()->context);
   mycpu()->intena = intena;
 }
 
@@ -550,11 +630,26 @@ sched(void)
 void
 yield(void)
 {
-  struct proc *p = myproc();
-  acquire(&p->lock);
-  p->state = RUNNABLE;
+  // printf("%d\n", __LINE__);
+  // int running_flag = 0;
+  // struct thread *itrthread;
+  struct thread *t = mythread();
+
+  acquire(&t->lock);
+
+  t->state = RUNNABLE;
+
+  // for(itrthread = t->parent->threads; itrthread < &t->parent->threads[NTHREAD]; itrthread++){
+  //   if(itrthread->state == RUNNING){
+  //     running_flag = 1;
+  //   } 
+  // }
+
+  // if(!running_flag)
+  //   t->parent->state = RUNNABLE;
+  // printf("%d\n", __LINE__);
   sched();
-  release(&p->lock);
+  release(&t->lock);
 }
 
 // A fork child's very first scheduling by scheduler()
@@ -562,10 +657,12 @@ yield(void)
 void
 forkret(void)
 {
+  // printf("%d\n", __LINE__);
   static int first = 1;
 
   // Still holding p->lock from scheduler.
-  release(&myproc()->lock);
+  printf("%d\n", mythread()->tid);
+  release(&mythread()->lock);
 
   if (first) {
     // File system initialization must be run in the context of a
@@ -583,7 +680,8 @@ forkret(void)
 void
 sleep(void *chan, struct spinlock *lk)
 {
-  struct proc *p = myproc();
+  // printf("%d", __LINE__);
+  struct thread *t = mythread();
   
   // Must acquire p->lock in order to
   // change p->state and then call sched.
@@ -592,20 +690,20 @@ sleep(void *chan, struct spinlock *lk)
   // (wakeup locks p->lock),
   // so it's okay to release lk.
 
-  acquire(&p->lock);  //DOC: sleeplock1
+  acquire(&t->lock);  //DOC: sleeplock1
   release(lk);
 
   // Go to sleep.
-  p->chan = chan;
-  p->state = SLEEPING;
-
+  t->chan = chan;
+  t->state = SLEEPING;
+  
   sched();
 
   // Tidy up.
-  p->chan = 0;
+  t->chan = 0;
 
   // Reacquire original lock.
-  release(&p->lock);
+  release(&t->lock);
   acquire(lk);
 }
 
@@ -614,15 +712,19 @@ sleep(void *chan, struct spinlock *lk)
 void
 wakeup(void *chan)
 {
+  // printf("%d", __LINE__);
   struct proc *p;
+  struct thread *t;
 
   for(p = proc; p < &proc[NPROC]; p++) {
-    if(p != myproc()){
-      acquire(&p->lock);
-      if(p->state == SLEEPING && p->chan == chan) {
-        p->state = RUNNABLE;
+    for(t = p->threads; t < &p->threads[NTHREAD]; t++){
+      if(t != mythread()){
+        acquire(&t->lock);
+      if(t->state == SLEEPING && t->chan == chan) {
+        t->state = RUNNABLE;
       }
-      release(&p->lock);
+      release(&t->lock);
+     }
     }
   }
 }
@@ -633,6 +735,7 @@ wakeup(void *chan)
 int
 kill(int pid, int signum)
 {
+  printf("%d", __LINE__);
   struct proc *p;
   
   if(signum < 0 || signum >= 32)
@@ -814,16 +917,16 @@ void
 sigret(void){
   printf("sigret \n");
 
-  struct proc *p = myproc();
+  struct thread *t = mythread();
 
   // Restore the process original trapframe
-  memmove(p->trapframe, p->trap_backup, sizeof(*p->trapframe));
+  memmove(t->trapframe, t->trap_backup, sizeof(*t->trapframe));
 
   // Restore the process original signal mask
-  p->sig_mask = p->mask_backup;
+  t->parent->sig_mask = t->parent->mask_backup;
 
   // Turn off the flag indicates a user space signal handling for blocking incoming signals at this time.
-  p->sighandler_flag = 0;
+  t->parent->sighandler_flag = 0;
 }
 
 void 
@@ -856,15 +959,23 @@ sigcont(void){
 static void
 freethread(struct thread *t)
 {
-  if(t->trapframe)
-    kfree((void*)t->trapframe);
+  if(&t->parent->threads[0] == t){
+    if(t->trapframe)
+     kfree((void*)t->trapframe);
+    if(t->trap_backup)
+      kfree((void*)t->trap_backup);
+  }
+  else{
+      if(t->kstack){
+        kfree((void*)t->kstack);
+        t->kstack = 0;
+      }
+
+  }
+
   t->trapframe = 0;
-  if(t->trap_backup)
-    kfree((void*)t->trap_backup);
   t->trap_backup = 0;
-  if(t->kstack)
-    kfree((void*)t->kstack);
-  t->trap_backup = 0;
+
   t->tid = 0;
   t->parent = 0;
   t->chan = 0;
@@ -885,6 +996,7 @@ allocthread(struct proc *p)
     }  
     else if(t->state == ZOMBIE){
       freethread(t);
+      release(&t->lock);
     }  
      else {
       release(&t->lock);
@@ -898,18 +1010,18 @@ found:
   t->killed = 0;
 
   // Allocate a trapframe page.
-  if((t->trapframe = (struct trapframe *)kalloc()) == 0){
-    freethread(t);
-    release(&t->lock);
-    return 0;
-  }
+  // if((t->trapframe = (struct trapframe *)kalloc()) == 0){
+  //   freethread(t);
+  //   release(&t->lock);
+  //   return 0;
+  // }
 
-  // Allocate a backup trapframe page.
-  if((t->trap_backup = (struct trapframe *)kalloc()) == 0){
-    freethread(t);
-    release(&t->lock);
-    return 0;
-  }
+  // // Allocate a backup trapframe page.
+  // if((t->trap_backup = (struct trapframe *)kalloc()) == 0){
+  //   freethread(t);
+  //   release(&t->lock);
+  //   return 0;
+  // }
 
 
   if((t->kstack = (uint64)kalloc()) == 0){
@@ -938,6 +1050,8 @@ found:
   // // Set up the SIG_DFL for all signals
   // for(i = 0; i < 32; i++)
   //   p->sig_handlers[i] = SIG_DFL;
+
+  release(&t->lock);
 
   return t;
 }
@@ -972,6 +1086,8 @@ void kthread_exit(int status){
   struct thread *t = mythread();
   struct proc *threadproc = t->parent;
   struct thread *itrthread;
+
+  acquire(&wait_lock);
   acquire(&t->lock);
   t->state = ZOMBIE;
 
@@ -984,6 +1100,7 @@ void kthread_exit(int status){
 
   if(terminate){
     threadproc->state = ZOMBIE;
+    release(&wait_lock);
     release(&t->lock);
     exit(status);
   }
@@ -995,9 +1112,12 @@ void kthread_exit(int status){
   t-> state = ZOMBIE;
   t-> tid = tid;
 
-  wakeup(t);
+  wakeup(&t);
+  
+  release(&wait_lock);
+  acquire(&t->lock);
   sched();
-
+  release(&t->lock);
   }
 
 int
@@ -1030,8 +1150,46 @@ kthread_join(int thread_id, int *status){
     if(!foundthread)
       return -1;
 
-    sleep(foundthread, &mytrd->lock);  
+    sleep(&foundthread, &mytrd->lock);  
   }
 }
+
+int bsem_alloc(){
+  int descriptor;
+  for(descriptor = 0; descriptor < MAX_BSEM; ++descriptor){
+    if(semaphore_array[descriptor] == DEALLOCED){
+      semaphore_array[descriptor] = UNLOCKED;
+      return descriptor;
+    }
+  }
+  return -1;
+}
+
+void bsem_free(int semaphore){
+  if(semaphore >= 0 && semaphore < MAX_BSEM)
+    semaphore_array[semaphore] = DEALLOCED;
+}
+
+void bsem_down(int semaphore){
+  if((semaphore < 0 && semaphore >= MAX_BSEM) || (semaphore_array[semaphore] == DEALLOCED))
+    return;
+
+  struct thread *t = mythread();
+
+  if(semaphore_array[semaphore] == LOCKED)
+    sleep(&semaphore_array[semaphore], &t->lock);
+  else
+    semaphore_array[semaphore] = 0;    
+}
+
+void bsem_up(int semaphore){
+  if((semaphore < 0 && semaphore >= MAX_BSEM) || (semaphore_array[semaphore] == DEALLOCED))
+    return;
+
+  wakeup(&semaphore_array[semaphore]);
+
+  semaphore_array[semaphore] = UNLOCKED;    
+}
+
 
 

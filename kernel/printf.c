@@ -120,7 +120,7 @@ panic(char *s)
   pr.locking = 0;
   printf("panic: ");
   printf(s);
-  printf("\n");
+  printf(" %d\n", mythread()->tid);
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;

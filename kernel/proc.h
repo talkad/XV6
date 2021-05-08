@@ -1,5 +1,9 @@
 #define NTHREAD 8
 #define MAX_STACK_SIZE 4000
+#define MAX_BSEM 128
+#define DEALLOCED -1
+#define LOCKED 0
+#define UNLOCKED 1
 
 // Saved registers for kernel context switches.
 struct context {
@@ -23,7 +27,7 @@ struct context {
 
 // Per-CPU state.
 struct cpu {
-  struct proc *proc;          // The process running on this cpu, or null.
+  // struct proc *proc;          // The process running on this cpu, or null.
   struct thread *thread;
   struct context context;     // swtch() here to enter scheduler().
   int noff;                   // Depth of push_off() nesting.
@@ -112,7 +116,7 @@ struct proc {
 
   // p->lock must be held when using these:
   enum procstate state;           // Process state
-  void *chan;                     // If non-zero, sleeping on chan
+  // void *chan;                     // If non-zero, sleeping on chan
   int killed;                     // If non-zero, have been killed
   int freezed;                    // If non-zero, have been freezed
   int sighandler_flag;            // If non-zero, this proccess is at signal handling
@@ -124,11 +128,11 @@ struct proc {
 
 
   // these are private to the process, so p->lock need not be held.
-  uint64 kstack;                  // Virtual address of kernel stack
+  // uint64 kstack;                  // Virtual address of kernel stack
   uint64 sz;                      // Size of process memory (bytes)
   pagetable_t pagetable;          // User page table
-  struct trapframe *trapframe;    // data page for trampoline.S
-  struct context context;         // swtch() here to run process
+  // struct trapframe *trapframe;    // data page for trampoline.S
+  // struct context context;         // swtch() here to run process
   struct file *ofile[NOFILE];     // Open files
   struct inode *cwd;              // Current directory
   char name[16];                  // Process name (debugging)
@@ -136,7 +140,7 @@ struct proc {
   uint pending_sig;               // Pending signals
   uint sig_mask;                  // Signal mask
   void* sig_handlers[32];         // Signal handlers
-  struct trapframe *trap_backup;  // User trap frame backup
+  // struct trapframe *trap_backup;  // User trap frame backup
   uint mask_backup;
 
   struct sigaction sigactions[32];// helper array 
@@ -144,6 +148,11 @@ struct proc {
 };
 
 int kthread_create( void ( *start_func ) () , void *stack ) ;
-int kthread_id();
+int kthread_id(void);
 void kthread_exit(int status);
 int kthread_join(int thread_id, int *status);
+
+int bsem_alloc(void);
+void bsem_free(int);
+void bsem_down(int);
+void bsem_up(int);
