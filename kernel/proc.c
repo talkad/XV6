@@ -548,6 +548,7 @@ wait(uint64 addr)
           freeproc(np);
           release(&np->lock);
           release(&wait_lock);
+
           return pid;
         }
         release(&np->lock);
@@ -612,10 +613,17 @@ scheduler(void)
 void
 sched(void)
 {
+
   int intena;
   struct thread *t = mythread();
 
+<<<<<<< HEAD
   if(!holding(&t->lock))
+=======
+
+
+  if(!holding(&p->lock))
+>>>>>>> fix
     panic("sched p->lock");
   if(mycpu()->noff != 1)
     panic("sched locks");
@@ -624,8 +632,14 @@ sched(void)
   if(intr_get())
     panic("sched interruptible");
 
+
   intena = mycpu()->intena;
+<<<<<<< HEAD
   swtch(&t->context, &mycpu()->context);
+=======
+  swtch(&p->context, &mycpu()->context);
+
+>>>>>>> fix
   mycpu()->intena = intena;
 }
 
@@ -633,6 +647,7 @@ sched(void)
 void
 yield(void)
 {
+<<<<<<< HEAD
   // int running_flag = 0;
   // struct thread *itrthread;
   struct thread *t = mythread();
@@ -651,6 +666,17 @@ t->line = __LINE__;
   //   t->parent->state = RUNNABLE;
   sched();
   release(&t->lock);
+=======
+  struct proc *p = myproc();
+
+  acquire(&p->lock);
+
+  p->state = RUNNABLE;
+
+  sched();
+
+  release(&p->lock);
+>>>>>>> fix
 }
 
 // A fork child's very first scheduling by scheduler()
@@ -869,8 +895,6 @@ sigaction(int signum, const struct sigaction *act, struct sigaction *oldact){
         p->sig_handlers[signum] = newaction.sa_handler;
       }
       else{
-
-        printf("handler address %p\n", newaction.sa_handler);
 
         p->sigactions[signum].sa_handler = newaction.sa_handler;
         p->sigactions[signum].sigmask = newaction.sigmask;
