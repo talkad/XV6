@@ -126,7 +126,10 @@ usertrapret(void)
   // set S Exception Program Counter to the saved user pc.
   w_sepc(t->trapframe->epc);
 
+
+  // printf("%d\n", __LINE__);
   sig_handler();
+  // printf("%d\n", __LINE__);
 
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(t->parent->pagetable);

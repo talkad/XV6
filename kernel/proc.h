@@ -108,6 +108,7 @@ struct thread {
   void *chan;
   int killed;
   struct trapframe *trap_backup;
+    int line;
 };
 
 // Per-process state

@@ -51,7 +51,6 @@ proc_mapstacks(pagetable_t kpgtbl) {
 void
 procinit(void)
 {
-  // printf("%d\n", __LINE__);
   struct proc *p;
   struct thread *t;
 
@@ -139,7 +138,6 @@ static struct thread* allocthread(struct proc*);
 static struct proc*
 allocproc(void)
 {
-  // printf("%d\n", __LINE__);
   struct proc *p;
   int i = 0;
 
@@ -192,6 +190,8 @@ found:
   release(&maint->lock);
 
   // An empty user page table.
+
+
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
     freeproc(p);
@@ -230,7 +230,6 @@ static void freethread(struct thread*);
 static void
 freeproc(struct proc *p)
 {
-  // printf("%d\n", __LINE__);
   struct thread *t;
 
   for(t = p->threads; t < &p->threads[NTHREAD]; t++)
@@ -254,7 +253,6 @@ freeproc(struct proc *p)
 // with no user memory, but with trampoline pages.
 pagetable_t
 proc_pagetable(struct proc *p){
-// {printf("%d\n", __LINE__);
   pagetable_t pagetable;
 
   // An empty page table.
@@ -309,7 +307,6 @@ uchar initcode[] = {
 void
 userinit(void)
 {
-  // printf("%d\n", __LINE__);
   struct proc *p;
 
   p = allocproc();
@@ -364,7 +361,6 @@ growproc(int n)
 int
 fork(void)
 {
-  // printf("%d\n", __LINE__);
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
@@ -448,7 +444,6 @@ reparent(struct proc *p)
 void
 exit(int status)
 {
-  // printf("%d\n", __LINE__);
   struct proc *p = myproc();
   struct thread *t = mythread();
 
@@ -476,9 +471,13 @@ exit(int status)
 
   // Parent might be sleeping in wait().
   wakeup(p->parent);
+  wakeup(p);
+  wakeup(t);
   
   acquire(&p->lock);
+  t->line = __LINE__;
   acquire(&t->lock);
+  t->line = __LINE__;
 
   p->xstate = status;
   p->state = ZOMBIE;
@@ -486,11 +485,18 @@ exit(int status)
   t->xstate = status;
   t->state = ZOMBIE;
 
+t->line = __LINE__;
+  release(&p->lock);
+  t->line = __LINE__;
+  release(&wait_lock);
+  t->line = __LINE__;
+
   struct thread *itrthread;
-  for(itrthread = p->threads; itrthread < &p->threads[NTHREAD]; t++){
+  for(itrthread = p->threads; itrthread < &p->threads[NTHREAD]; itrthread++){
    
     if(itrthread != t){
-       acquire(&itrthread->lock);
+      t->line = __LINE__;
+      acquire(&itrthread->lock);
       itrthread->killed = 1;
       if(itrthread->state == SLEEPING){
         itrthread->state = RUNNABLE;
@@ -500,8 +506,8 @@ exit(int status)
     
   }
 
-  release(&p->lock);
-  release(&wait_lock);
+
+  
   
   // Jump into the scheduler, never to return.
 
@@ -515,7 +521,6 @@ exit(int status)
 int
 wait(uint64 addr)
 {
-  // printf("%d\n", __LINE__);
   struct proc *np;
   int havekids, pid;
   struct proc *p = myproc();
@@ -570,7 +575,6 @@ wait(uint64 addr)
 void
 scheduler(void)
 {
-  // printf("%d\n", __LINE__);
   struct proc *p;
   struct thread *t;
   struct cpu *c = mycpu();
@@ -583,13 +587,13 @@ scheduler(void)
 
     for(p = proc; p < &proc[NPROC]; p++) {
       for(t = p->threads; t< &p->threads[NTHREAD]; t++){
+        t->line = __LINE__;
         acquire(&t->lock);
+        t->line = __LINE__;
         if(t->state == RUNNABLE){
           t->state = RUNNING;
           c->thread = t;
-          // printf("%d\n", __LINE__);
           swtch(&c->context, &t->context);
-          // printf("%d\n", __LINE__);
           c->thread = 0;
         }
         release(&t->lock);
@@ -608,7 +612,6 @@ scheduler(void)
 void
 sched(void)
 {
-  // printf("%d\n", __LINE__);
   int intena;
   struct thread *t = mythread();
 
@@ -630,11 +633,10 @@ sched(void)
 void
 yield(void)
 {
-  // printf("%d\n", __LINE__);
   // int running_flag = 0;
   // struct thread *itrthread;
   struct thread *t = mythread();
-
+t->line = __LINE__;
   acquire(&t->lock);
 
   t->state = RUNNABLE;
@@ -647,7 +649,6 @@ yield(void)
 
   // if(!running_flag)
   //   t->parent->state = RUNNABLE;
-  // printf("%d\n", __LINE__);
   sched();
   release(&t->lock);
 }
@@ -657,11 +658,9 @@ yield(void)
 void
 forkret(void)
 {
-  // printf("%d\n", __LINE__);
   static int first = 1;
 
   // Still holding p->lock from scheduler.
-  printf("%d\n", mythread()->tid);
   release(&mythread()->lock);
 
   if (first) {
@@ -680,7 +679,6 @@ forkret(void)
 void
 sleep(void *chan, struct spinlock *lk)
 {
-  // printf("%d", __LINE__);
   struct thread *t = mythread();
   
   // Must acquire p->lock in order to
@@ -689,7 +687,7 @@ sleep(void *chan, struct spinlock *lk)
   // guaranteed that we won't miss any wakeup
   // (wakeup locks p->lock),
   // so it's okay to release lk.
-
+t->line = __LINE__;
   acquire(&t->lock);  //DOC: sleeplock1
   release(lk);
 
@@ -712,18 +710,18 @@ sleep(void *chan, struct spinlock *lk)
 void
 wakeup(void *chan)
 {
-  // printf("%d", __LINE__);
   struct proc *p;
   struct thread *t;
 
   for(p = proc; p < &proc[NPROC]; p++) {
     for(t = p->threads; t < &p->threads[NTHREAD]; t++){
       if(t != mythread()){
+        t->line = __LINE__;
         acquire(&t->lock);
-      if(t->state == SLEEPING && t->chan == chan) {
-        t->state = RUNNABLE;
-      }
-      release(&t->lock);
+        if(t->state == SLEEPING && t->chan == chan) {
+          t->state = RUNNABLE;
+       }
+        release(&t->lock);
      }
     }
   }
@@ -735,7 +733,6 @@ wakeup(void *chan)
 int
 kill(int pid, int signum)
 {
-  printf("%d", __LINE__);
   struct proc *p;
   
   if(signum < 0 || signum >= 32)
@@ -869,7 +866,6 @@ sigaction(int signum, const struct sigaction *act, struct sigaction *oldact){
 
       if((uint64)newaction.sa_handler < 32)
       {
-        printf("boiiiiiiiiiiiiiiiiiiiiiiiiiiii\n");
         p->sig_handlers[signum] = newaction.sa_handler;
       }
       else{
@@ -976,7 +972,7 @@ freethread(struct thread *t)
   t->trapframe = 0;
   t->trap_backup = 0;
 
-  t->tid = 0;
+  // t->tid = 0;
   t->parent = 0;
   t->chan = 0;
   t->killed = 0;
@@ -990,6 +986,7 @@ allocthread(struct proc *p)
   struct thread *t;
   
   for(t = p->threads ;t < &p->threads[NTHREAD]; t++) {
+    t->line = __LINE__;
     acquire(&t->lock);
     if(t->state == UNUSED) {
       goto found;
@@ -1081,13 +1078,14 @@ kthread_id(void){
 }
 
 void kthread_exit(int status){
-  int tid;
+  // int tid;
   int terminate = 1;
   struct thread *t = mythread();
   struct proc *threadproc = t->parent;
   struct thread *itrthread;
 
   acquire(&wait_lock);
+  t->line = __LINE__;
   acquire(&t->lock);
   t->state = ZOMBIE;
 
@@ -1105,17 +1103,17 @@ void kthread_exit(int status){
     exit(status);
   }
 
-  tid = t->tid;
-  freethread(t);
+  // tid = t->tid;
+  // freethread(t);
   t -> killed = 1;
   t -> xstate = status;
   t-> state = ZOMBIE;
-  t-> tid = tid;
+  // t-> tid = tid;
 
-  wakeup(&t);
-  
+  wakeup(t);
+
   release(&wait_lock);
-  acquire(&t->lock);
+  t->line = __LINE__;
   sched();
   release(&t->lock);
   }
@@ -1150,7 +1148,7 @@ kthread_join(int thread_id, int *status){
     if(!foundthread)
       return -1;
 
-    sleep(&foundthread, &mytrd->lock);  
+    sleep(foundthread, &mytrd->lock);  
   }
 }
 
