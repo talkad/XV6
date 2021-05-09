@@ -117,7 +117,7 @@ printf(char *fmt, ...)
 void
 panic(char *s)
 {
-  printf("helppppppppppppppppppppppp %d %s", myproc()->freezed, myproc()->state);
+  // printf("helppppppppppppppppppppppp %d %s", myproc()->freezed, myproc()->state);
   pr.locking = 0;
   printf("panic: ");
   printf(s);

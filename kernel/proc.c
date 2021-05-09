@@ -485,11 +485,13 @@ exit(int status)
   t->xstate = status;
   t->state = ZOMBIE;
 
-t->line = __LINE__;
+  t->line = __LINE__;
   release(&p->lock);
   t->line = __LINE__;
   release(&wait_lock);
   t->line = __LINE__;
+
+  // printf("pid %d tries to exit\n", p->pid);
 
   struct thread *itrthread;
   for(itrthread = p->threads; itrthread < &p->threads[NTHREAD]; itrthread++){
@@ -592,9 +594,14 @@ scheduler(void)
         acquire(&t->lock);
         t->line = __LINE__;
         if(t->state == RUNNABLE){
+
           t->state = RUNNING;
           c->thread = t;
+          t->line = __LINE__;
+
           swtch(&c->context, &t->context);
+          t->line = __LINE__;
+
           c->thread = 0;
         }
         release(&t->lock);
@@ -617,13 +624,7 @@ sched(void)
   int intena;
   struct thread *t = mythread();
 
-<<<<<<< HEAD
   if(!holding(&t->lock))
-=======
-
-
-  if(!holding(&p->lock))
->>>>>>> fix
     panic("sched p->lock");
   if(mycpu()->noff != 1)
     panic("sched locks");
@@ -632,14 +633,12 @@ sched(void)
   if(intr_get())
     panic("sched interruptible");
 
+t->line = __LINE__;
 
   intena = mycpu()->intena;
-<<<<<<< HEAD
   swtch(&t->context, &mycpu()->context);
-=======
-  swtch(&p->context, &mycpu()->context);
+  t->line = __LINE__;
 
->>>>>>> fix
   mycpu()->intena = intena;
 }
 
@@ -647,7 +646,6 @@ sched(void)
 void
 yield(void)
 {
-<<<<<<< HEAD
   // int running_flag = 0;
   // struct thread *itrthread;
   struct thread *t = mythread();
@@ -666,17 +664,6 @@ t->line = __LINE__;
   //   t->parent->state = RUNNABLE;
   sched();
   release(&t->lock);
-=======
-  struct proc *p = myproc();
-
-  acquire(&p->lock);
-
-  p->state = RUNNABLE;
-
-  sched();
-
-  release(&p->lock);
->>>>>>> fix
 }
 
 // A fork child's very first scheduling by scheduler()
@@ -720,8 +707,10 @@ t->line = __LINE__;
   // Go to sleep.
   t->chan = chan;
   t->state = SLEEPING;
-  
+  t->line = __LINE__;
+
   sched();
+t->line = __LINE__;
 
   // Tidy up.
   t->chan = 0;
@@ -752,6 +741,7 @@ wakeup(void *chan)
     }
   }
 }
+
 
 // Kill the process with the given pid.
 // The victim won't exit until it tries to return
@@ -953,6 +943,9 @@ void
 sigkill(void){
   struct proc *p = myproc();
 
+  printf("sigkill activated and the state is %d\n", p->state);
+
+
   p->killed = 1;
 
   if(p->state == SLEEPING){
@@ -1122,16 +1115,16 @@ void kthread_exit(int status){
 
   if(terminate){
     threadproc->state = ZOMBIE;
-    release(&wait_lock);
     release(&t->lock);
+    release(&wait_lock);
     exit(status);
   }
 
   // tid = t->tid;
   // freethread(t);
-  t -> killed = 1;
-  t -> xstate = status;
-  t-> state = ZOMBIE;
+  t->killed = 1;
+  t->xstate = status;
+  t->state = ZOMBIE;
   // t-> tid = tid;
 
   wakeup(t);
@@ -1157,13 +1150,20 @@ kthread_join(int thread_id, int *status){
     acquire(&mytrd->lock);
 
     for(t = p->threads; t < &p->threads[NTHREAD]; t++){
-      if(t->tid == thread_id){
-        foundthread = t;
-        if(t->state == ZOMBIE){
-          *status = t->xstate;
-          freethread(t);
-          return 0;
+      if(t != mytrd){
+        acquire(&t->lock);
+        if(t->tid == thread_id){
+          foundthread = t;
+          if(t->state == ZOMBIE){
+            *status = t->xstate;
+
+            release(&t->lock);
+            release(&mytrd->lock);
+            // freethread(t);
+            return 0;
+          }
         }
+        release(&t->lock);
       }
     }
 
@@ -1172,7 +1172,9 @@ kthread_join(int thread_id, int *status){
     if(!foundthread)
       return -1;
 
-    sleep(foundthread, &mytrd->lock);  
+    acquire(&tid_lock);
+    // printf("helppppppppppppppppppppppppppppppppppppp\n");
+    sleep(foundthread, &tid_lock);  
   }
 }
 

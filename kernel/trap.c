@@ -64,6 +64,9 @@ usertrap(void)
     if(t->killed)
       kthread_exit(-1);
 
+    if(t->parent->killed)
+      exit(-1);
+
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
     t->trapframe->epc += 4;
@@ -79,10 +82,14 @@ usertrap(void)
     printf("usertrap(): unexpected scause %p tid=%d\n", r_scause(), t->tid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     t->killed = 1;
+    t->parent->killed = 1;
   }
 
   if(t->killed)
     kthread_exit(-1);
+
+  if(t->parent->killed)
+    exit(-1);
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
@@ -136,7 +143,7 @@ usertrapret(void)
   // and switches to user mode with sret.
   
   uint64 fn = TRAMPOLINE + (userret - trampoline);
- ((void (*)(uint64,uint64))fn)(TRAPFRAME + (sizeof(struct trapframe) * (t - t->parent->threads)), satp);
+ ((void (*)(uint64,uint64))fn)(TRAPFRAME + (sizeof(struct trapframe) * ((t - t->parent->threads)/sizeof(struct thread))), satp);
 }
 
 void 
