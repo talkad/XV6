@@ -99,6 +99,8 @@ usertrapret(void)
 {
   struct proc *p = myproc();
 
+  sig_handler();
+
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(), so turn off interrupts until
   // we're back in user space, where usertrap() is correct.
@@ -125,8 +127,6 @@ usertrapret(void)
 
   // set S Exception Program Counter to the saved user pc.
   w_sepc(p->trapframe->epc);
-
-  sig_handler();
 
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);
@@ -180,44 +180,156 @@ void
 sig_handler(){
   struct proc *p = myproc();
   int i;
+  
+  for(;;){
+    if(p->freezed)
+    {
+      for(i = 0; i < 32; i++){
+        if((p->pending_sig & (1<<i)) != 0 && (p->sig_mask & (1<<i)) == 0 && p->sighandler_flag == 0){
 
-  // handling signals 2.4
-  for(i = 0; i < 32; i++){
-    if((p->pending_sig & (1<<i)) != 0 && (p->sig_mask & (1<<i)) == 0 && p->sighandler_flag == 0){
-      
-      if(p->sig_handlers[i] == (void*)SIG_DFL){
-        if(i == SIGSTOP)
-          sigstop();
-        else if(i == SIGCONT)
-          sigcont();
-        else
-          sigkill();
-      }
-      else if(p->sig_handlers[i] == (void*)SIGSTOP){
-        sigstop();
-      }
-      else if(p->sig_handlers[i] == (void*)SIGCONT){
-        sigcont();
-      }
-      else if(p->sig_handlers[i] == (void*)SIGKILL){
-        sigkill();
-      }
-      else if(p->sig_handlers[i] == (void*)SIG_IGN){
-        // do nothing
-      }
-      else{
-        user_sig_handler(i);
+          if(p->sig_handlers[i] == (void*)SIG_DFL){
+            if(i == SIGSTOP)
+              continue;
+            else if(i == SIGCONT)
+              sigcont();
+            else
+              sigkill();
+          }
+          else if(p->sig_handlers[i] == (void*)SIGCONT){
+            sigcont();
+          }
+          else if(p->sig_handlers[i] == (void*)SIGKILL){
+            sigkill();
+          }
+
+          if(p->freezed && p->killed == 0){
+            yield();  
+          }
+        }
       }
 
-    p->pending_sig &= ~(1 << i);
+    }
+    else{
+
+      for(i = 0; i < 32; i++){
+        if((p->pending_sig & (1<<i)) != 0 && (p->sig_mask & (1<<i)) == 0 && p->sighandler_flag == 0){
+          
+          p->pending_sig &= ~(1 << i);
+
+          if(p->sig_handlers[i] == (void*)SIG_DFL){
+            if(i == SIGSTOP)
+              sigstop();
+            else if(i == SIGCONT)
+              sigcont();
+            else
+              sigkill();
+          }
+          else if(p->sig_handlers[i] == (void*)SIGCONT){
+            sigcont();
+          }
+          else if(p->sig_handlers[i] == (void*)SIGKILL){
+            sigkill();
+          }
+          else{
+
+            if(p->sig_handlers[i] == (void*)SIG_DFL){
+              if(i == SIGSTOP)
+                sigstop();
+              else if(i == SIGCONT)
+                sigcont();
+              else
+                sigkill();
+            }
+            else if(p->sig_handlers[i] == (void*)SIGSTOP){
+              sigstop();
+            }
+            else if(p->sig_handlers[i] == (void*)SIGCONT){
+              sigcont();
+            }
+            else if(p->sig_handlers[i] == (void*)SIGKILL){
+              sigkill();
+            }
+            else if(p->sig_handlers[i] == (void*)SIG_IGN){
+              // do nothing
+            }
+            else{
+              user_sig_handler(i);
+            }
+          }
+        }
+      }
+
+    break;
     }
   }
 
-  if(p->freezed){
-    printf("yields to cpu\n");
-    intr_on();
-    yield();  
-  }
+
+
+
+//   acquire(&p->lock);
+
+//   // handling signals 2.4
+//   for(i = 0; i < 32; i++){
+//     if((p->pending_sig & (1<<i)) != 0 && (p->sig_mask & (1<<i)) == 0 && p->sighandler_flag == 0){
+      
+//       if(p->freezed)
+//       {
+//         if(p->sig_handlers[i] == (void*)SIG_DFL){
+//           if(i == SIGSTOP)
+//             sigstop();
+//           else if(i == SIGCONT)
+//             sigcont();
+//           else
+//             sigkill();
+//         }
+//         else if(p->sig_handlers[i] == (void*)SIGCONT){
+//           sigcont();
+//         }
+//         else if(p->sig_handlers[i] == (void*)SIGKILL){
+//           sigkill();
+//         }
+//       }
+//       else{
+
+//         if(p->sig_handlers[i] == (void*)SIG_DFL){
+//           if(i == SIGSTOP)
+//             sigstop();
+//           else if(i == SIGCONT)
+//             sigcont();
+//           else
+//             sigkill();
+//         }
+//         else if(p->sig_handlers[i] == (void*)SIGSTOP){
+//           sigstop();
+//         }
+//         else if(p->sig_handlers[i] == (void*)SIGCONT){
+//           sigcont();
+//         }
+//         else if(p->sig_handlers[i] == (void*)SIGKILL){
+//           sigkill();
+//         }
+//         else if(p->sig_handlers[i] == (void*)SIG_IGN){
+//           // do nothing
+//         }
+//         else{
+//           user_sig_handler(i);
+//         }
+//       }
+
+//     p->pending_sig &= ~(1 << i);
+//     }
+//   }
+
+//   if(p->freezed && p->killed == 0){
+//     release(&p->lock);
+//     // printf("yields to cpu\n");
+//     printf("help me %d\n", __LINE__);
+//     yield();  
+//     printf("help me %d\n", __LINE__);
+//     sig_handler();
+//   }
+// release(&p->lock);
+
 }
 
 // interrupts and exceptions from kernel code go here via kernelvec,

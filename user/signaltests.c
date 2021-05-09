@@ -101,22 +101,28 @@ sigaction_test(){
 // test sigaction
 void
 THE_TEST_THAT_NEVER_ENDS(){
-  int status;
+ int status;
   int pid = fork();
   if(pid){
-    sleep(5);
-    printf("killed \n");
+             printf("hellllllllllll %d", pid);
+
+    sleep(15);
     kill(pid, SIGSTOP);
+
     wait(&status);
 
     printf("noooooooooooooooooooooooooooooo \n");
 
-    exit(0);
+    exit(1);
   }
   else{
+    int i = 0;
+
     sleep(10);
-    while(1)
-      printf("a");
+    while(1){
+      printf("%d\n", i);
+      i++;
+    }
 
     exit(0);
   }
@@ -356,9 +362,9 @@ main(int argc, char *argv[])
   } tests[] = {
           {killstatus, "killstatus"},
           {old_sigaction_test, "old_sigaction"},
-    // {sigaction_test, "sigaction_test"},
+    {sigaction_test, "sigaction_test"},
           {sigprocmaskTest, "sigprocmaskTest"},
-    // {signal_test, "signal_test"},
+    {signal_test, "signal_test"},
 
           // {THE_TEST_THAT_NEVER_ENDS, "THE_TEST_THAT_NEVER_ENDS"},
           // {THE_TEST_THAT_NEVER_ENDS_ADVANCED, "THE_TEST_THAT_NEVER_ENDS_ADVANCED"},
