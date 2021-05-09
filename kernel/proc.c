@@ -444,6 +444,7 @@ wait(uint64 addr)
           freeproc(np);
           release(&np->lock);
           release(&wait_lock);
+
           return pid;
         }
         release(&np->lock);
@@ -508,8 +509,11 @@ scheduler(void)
 void
 sched(void)
 {
+
   int intena;
   struct proc *p = myproc();
+
+
 
   if(!holding(&p->lock))
     panic("sched p->lock");
@@ -520,8 +524,10 @@ sched(void)
   if(intr_get())
     panic("sched interruptible");
 
+
   intena = mycpu()->intena;
   swtch(&p->context, &mycpu()->context);
+
   mycpu()->intena = intena;
 }
 
@@ -530,9 +536,13 @@ void
 yield(void)
 {
   struct proc *p = myproc();
+
   acquire(&p->lock);
+
   p->state = RUNNABLE;
+
   sched();
+
   release(&p->lock);
 }
 
@@ -745,12 +755,9 @@ sigaction(int signum, const struct sigaction *act, struct sigaction *oldact){
 
       if((uint64)newaction.sa_handler < 32)
       {
-        printf("boiiiiiiiiiiiiiiiiiiiiiiiiiiii\n");
         p->sig_handlers[signum] = newaction.sa_handler;
       }
       else{
-
-        printf("handler address %p\n", newaction.sa_handler);
 
         p->sigactions[signum].sa_handler = newaction.sa_handler;
         p->sigactions[signum].sigmask = newaction.sigmask;
