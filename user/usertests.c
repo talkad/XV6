@@ -63,11 +63,11 @@ void signal_test(char *s){
 
 void thread_test(char *s){
     int tid;
-    int status;
+    int status = 0;
     void* stack = malloc(STACK_SIZE);
     tid = kthread_create(test_thread, stack);
     printf("I reached with tid %d\n", tid);
-    kthread_join(tid,&status);
+    // kthread_join(tid,&status);
 
     // tid = kthread_id();
     free(stack);

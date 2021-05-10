@@ -167,13 +167,11 @@ found:
   memset(&maint->context, 0, sizeof(maint->context));
   maint->context.ra = (uint64)forkret;
   maint->context.sp = maint->kstack + PGSIZE;
+
   // Allocate a trapframe page.
-  // struct thread *t;
-  // struct trapframe *tf;
-  // struct trapframe *backup_tf;
-  
   if((p->framehead = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
+    release(&maint->lock);
     release(&p->lock);
     return 0;
   }
@@ -181,26 +179,21 @@ found:
   // Allocate a backup trapframe page.
   if((p->backupframehead = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
+    release(&maint->lock);
     release(&p->lock);
     return 0;
   }
 
   maint->trapframe = p->framehead;
   maint->trap_backup = p->backupframehead;
-  // for(t = p->threads; t < &p->threads[NTHREAD]; t++){
-  //   t->trapframe = tf + i;
-  //   t->trap_backup = backup_tf + i;
-  //   ++i;
-  // }
 
   release(&maint->lock);
 
   // An empty user page table.
-
-
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
     freeproc(p);
+    release(&maint->lock);
     release(&p->lock);
     return 0;
   }
@@ -225,9 +218,33 @@ static void
 freeproc(struct proc *p)
 {
   struct thread *t;
+  int xstate;
 
-  for(t = p->threads; t < &p->threads[NTHREAD]; t++)
-    freethread(t);
+  for(t = p->threads; t < &p->threads[NTHREAD]; t++){
+    acquire(&t->lock);
+
+    if(t->state == ZOMBIE){
+      freethread(t);
+      release(&t->lock);
+    }
+    else if(t->state != UNUSED){
+      t->killed = 1;
+
+      if(t->state == SLEEPING){
+        t->state = RUNNABLE;
+      }
+
+      release(&t->lock);
+      kthread_join(t->tid, &xstate);
+
+      acquire(&t->lock);
+      freethread(t);
+      release(&t->lock);
+    }
+    else{
+      release(&t->lock);
+    }
+  }
 
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
@@ -273,7 +290,7 @@ proc_pagetable(struct proc *p){
 
   // map the trapframe just below TRAMPOLINE, for trampoline.S.
   if(mappages(pagetable, TRAPFRAME, PGSIZE,
-              (uint64)(p->threads[0].trapframe), PTE_R | PTE_W) < 0){
+              (uint64)(p->framehead), PTE_R | PTE_W) < 0){
     uvmunmap(pagetable, TRAMPOLINE, 1, 0);
     uvmfree(pagetable, 0);
     return 0;
@@ -372,12 +389,20 @@ fork(void)
     return -1;
   }
 
+  acquire(&p->lock);
+  acquire(&t->lock);
+  acquire(&np->threads[0].lock);
+
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
+    release(&np->threads[0].lock);
     release(&np->lock);
+    release(&t->lock);
+    release(&p->lock);
     return -1;
   }
+
   np->sz = p->sz;
 
   // copy saved user registers.
@@ -398,8 +423,16 @@ fork(void)
 
   release(&np->lock);
 
+  release(&np->threads[0].lock);
+  release(&t->lock);
+  release(&p->lock);
+
   acquire(&wait_lock);
   np->parent = p;
+  release(&wait_lock);
+
+  acquire(&p->lock);
+  acquire(&np->lock);
 
   // inherit sigMask and the handlers of the parent proccess
   np->sig_mask = p->sig_mask;
@@ -414,12 +447,16 @@ fork(void)
       np->sig_handlers[i] = & np->sigactions[i];
   }
 
-  release(&wait_lock);
+  release(&np->lock);
+  release(&p->lock);
 
   acquire(&np->lock);
+  acquire(&np->threads[0].lock);
   np->state = RUNNABLE;
   np->threads[0].state = RUNNABLE;
+  release(&np->threads[0].lock);
   release(&np->lock);
+
 
   return pid;
 }
@@ -471,9 +508,11 @@ t->line = __LINE__;
   reparent(p);
 t->line = __LINE__;
   // Parent might be sleeping in wait().
+
   wakeup(p->parent);
   wakeup(p);
   wakeup(t);
+
   t->line = __LINE__;
   acquire(&p->lock);
   t->line = __LINE__;
@@ -500,18 +539,19 @@ t->line = __LINE__;
     if(itrthread != t){
       t->line = __LINE__;
       acquire(&itrthread->lock);
-      itrthread->killed = 1;
-      if(itrthread->state == SLEEPING){
-        itrthread->state = RUNNABLE;
+      if(itrthread->state != UNUSED){
+        itrthread->killed = 1;
+
+        if(itrthread->state == SLEEPING){
+          itrthread->state = RUNNABLE;
+        }
       }
+
       release(&itrthread->lock);
     }
     
   }
 
-
-  
-  
   // Jump into the scheduler, never to return.
 
 
@@ -647,24 +687,17 @@ t->line = __LINE__;
 void
 yield(void)
 {
-  // int running_flag = 0;
-  // struct thread *itrthread;
+  struct proc *p = myproc();
   struct thread *t = mythread();
 
 t->line = __LINE__;
+  acquire(&p->lock);
   acquire(&t->lock);
 t->line = __LINE__;
   t->state = RUNNABLE;
+  p->state = RUNNABLE;
 
-  // for(itrthread = t->parent->threads; itrthread < &t->parent->threads[NTHREAD]; itrthread++){
-  //   if(itrthread->state == RUNNING){
-  //     running_flag = 1;
-  //   } 
-  // }
-
-  // if(!running_flag)
-  //   t->parent->state = RUNNABLE;
-
+  release(&p->lock);
   sched();
   release(&t->lock);
 }
@@ -762,7 +795,7 @@ kill(int pid, int signum)
     acquire(&p->lock);
     if(p->pid == pid){
 
-      printf("killed pid %d with %d\n", pid, signum);
+      // printf("killed pid %d with %d\n", pid, signum);
 
       p->pending_sig |= 1<<signum; 
 
@@ -982,19 +1015,15 @@ freethread(struct thread *t)
     // if(t->trap_backup)
     //   kfree((void*)t->trap_backup);
   }
-  
   else{
       if(t->kstack){
         kfree((void*)t->kstack);
         t->kstack = 0;
       }
-
   }
 
   t->trapframe = 0;
   t->trap_backup = 0;
-
-  // t->tid = 0;
   t->parent = 0;
   t->chan = 0;
   t->killed = 0;
@@ -1013,11 +1042,11 @@ allocthread(struct proc *p)
     if(t->state == UNUSED) {
       goto found;
     }  
-    else if(t->state == ZOMBIE){
-      freethread(t);
-      release(&t->lock);
-    }  
-     else {
+    // else if(t->state == ZOMBIE){
+    //   freethread(t);
+    //   release(&t->lock);
+    // }  
+    else {
       release(&t->lock);
     }
   }
@@ -1031,6 +1060,7 @@ found:
   t->tid = alloctid();
   t->state = EMBRYO;
   t->killed = 0;
+  t->parent = p;
 
   // Allocate a trapframe page.
    t->line = __LINE__;
@@ -1124,12 +1154,10 @@ t->line = __LINE__;
     exit(status);
   }
 t->line = __LINE__;
-  // tid = t->tid;
-  // freethread(t);
+
   t->killed = 1;
   t->xstate = status;
   t->state = ZOMBIE;
-  // t-> tid = tid;
 
   wakeup(t);
 
@@ -1180,7 +1208,7 @@ t->line = __LINE__;
       return -1;
 
     acquire(&tid_lock);
-    // printf("helppppppppppppppppppppppppppppppppppppp\n");
+
     sleep(foundthread, &tid_lock);  
   }
 }
