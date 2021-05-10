@@ -1,4 +1,8 @@
 #include "Csemaphore.h"
+#include "kernel/types.h"
+#include "kernel/stat.h"
+#include "kernel/fcntl.h"
+#include "user/user.h"
 
 void csem_down(struct counting_semaphore *sem){
     bsem_down(sem->binSemB);
@@ -12,7 +16,7 @@ void csem_down(struct counting_semaphore *sem){
 }
 
 void csem_up(struct counting_semaphore *sem){
-    bsem_down(sem-binSemA);
+    bsem_down(sem->binSemA);
     sem->value++;
 
     if(sem->value == 1)
@@ -22,30 +26,31 @@ void csem_up(struct counting_semaphore *sem){
 }
 
 int csem_alloc(struct counting_semaphore *sem, int initial_value){
-    if(sem){
-        int firstsem = bsem_alloc();
-        int secondsem = bsem_alloc();
-        if((firstsem == -1) || (secondsem == -1)){
-            bsem_free(firstsem);
-            bsem_free(secondsem);
-            return -1;
-        }
-
-        sem->value = initial_value
-        sem->binSemA = firstsem;
-        sem->binSemB = secondsem;
-
-        if(initial_value == 0)
-            bsem_down(sem->binSemB);
-
-        return 0;
-    }
-    else
+    int firstsem = bsem_alloc();
+    if(firstsem < 0){
+        bsem_free(firstsem);
         return -1;
+    }
+
+    int secondsem = bsem_alloc();
+    if(secondsem < 0){
+        bsem_free(firstsem);
+        bsem_free(secondsem);
+        return -1;
+    }
+
+    sem->value = initial_value;
+    sem->binSemA = firstsem;
+    sem->binSemB = secondsem;
+
+    if(initial_value == 0)
+        bsem_down(sem->binSemB);
+
+    return 0;
+
 }
 
 void csem_free(struct counting_semaphore *sem){
     bsem_free(sem->binSemA);
     bsem_free(sem->binSemB);
-    free(sem);
 }

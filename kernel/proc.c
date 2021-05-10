@@ -18,7 +18,7 @@ struct spinlock pid_lock;
 int nexttid = 1;
 struct spinlock tid_lock;
 
-static int semaphore_array[MAX_BSEM] = {[0 ... (MAX_BSEM - 1)] = UNLOCKED};
+static struct binary_semaphore semaphore_array[MAX_BSEM];
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
@@ -70,6 +70,14 @@ procinit(void)
       }
     p->threads[0].kstack = KSTACK((int) (p - proc));
     
+  }
+
+  struct binary_semaphore *sem;
+
+  // init bsem
+  for(sem = semaphore_array; sem < &semaphore_array[MAX_BSEM]; sem++){
+    initlock(&sem->lock, "semaphore");
+    sem->val = UNLOCKED;
   }
 }
 
@@ -484,7 +492,7 @@ exit(int status)
 {
   struct proc *p = myproc();
   struct thread *t = mythread();
-t->line = __LINE__;
+ 
   if(p == initproc)
     panic("init exiting");
 
@@ -496,28 +504,28 @@ t->line = __LINE__;
       p->ofile[fd] = 0;
     }
   }
-t->line = __LINE__;
+ 
   begin_op();
   iput(p->cwd);
   end_op();
   p->cwd = 0;
-t->line = __LINE__;
+ 
   acquire(&wait_lock);
-t->line = __LINE__;
+ 
   // Give any children to init.
   reparent(p);
-t->line = __LINE__;
+ 
   // Parent might be sleeping in wait().
 
   wakeup(p->parent);
   wakeup(p);
   wakeup(t);
 
-  t->line = __LINE__;
+   
   acquire(&p->lock);
-  t->line = __LINE__;
+   
   acquire(&t->lock);
-  t->line = __LINE__;
+   
 
   p->xstate = status;
   p->state = ZOMBIE;
@@ -526,19 +534,19 @@ t->line = __LINE__;
   t->state = ZOMBIE;
 
   release(&t->lock);
-  t->line = __LINE__;
+   
   release(&p->lock);
-  t->line = __LINE__;
+   
   release(&wait_lock);
-  t->line = __LINE__;
+   
 
   // printf("pid %d tries to exit\n", p->pid);
-t->line = __LINE__;
+ 
   struct thread *itrthread;
   for(itrthread = p->threads; itrthread < &p->threads[NTHREAD]; itrthread++){
    
     if(itrthread != t){
-      t->line = __LINE__;
+       
       acquire(&itrthread->lock);
       if(itrthread->state != UNUSED){
         itrthread->killed = 1;
@@ -632,17 +640,17 @@ scheduler(void)
 
     for(p = proc; p < &proc[NPROC]; p++) {
       for(t = p->threads; t< &p->threads[NTHREAD]; t++){
-        t->line = __LINE__;
+         
         acquire(&t->lock);
-        t->line = __LINE__;
+         
         if(t->state == RUNNABLE){
 
           t->state = RUNNING;
           c->thread = t;
-          t->line = __LINE__;
+           
 
           swtch(&c->context, &t->context);
-          t->line = __LINE__;
+           
 
           c->thread = 0;
         }
@@ -665,7 +673,7 @@ sched(void)
 
   int intena;
   struct thread *t = mythread();
-t->line = __LINE__;
+ 
   if(!holding(&t->lock))
     panic("sched p->lock");
   if(mycpu()->noff != 1)
@@ -675,12 +683,12 @@ t->line = __LINE__;
   if(intr_get())
     panic("sched interruptible");
 
-t->line = __LINE__;
+ 
 
   intena = mycpu()->intena;
   swtch(&t->context, &mycpu()->context);
-  t->line = __LINE__;
-t->line = __LINE__;
+   
+ 
   mycpu()->intena = intena;
 }
 
@@ -691,10 +699,10 @@ yield(void)
   struct proc *p = myproc();
   struct thread *t = mythread();
 
-t->line = __LINE__;
+ 
   acquire(&p->lock);
   acquire(&t->lock);
-t->line = __LINE__;
+ 
   t->state = RUNNABLE;
   p->state = RUNNABLE;
 
@@ -737,17 +745,17 @@ sleep(void *chan, struct spinlock *lk)
   // guaranteed that we won't miss any wakeup
   // (wakeup locks p->lock),
   // so it's okay to release lk.
-t->line = __LINE__;
+ 
   acquire(&t->lock);  //DOC: sleeplock1
   release(lk);
 
   // Go to sleep.
   t->chan = chan;
   t->state = SLEEPING;
-  t->line = __LINE__;
+   
 
   sched();
-t->line = __LINE__;
+ 
 
   // Tidy up.
   t->chan = 0;
@@ -769,9 +777,9 @@ wakeup(void *chan)
     for(t = p->threads; t < &p->threads[NTHREAD]; t++){
      
       if(t != mythread()){
-          t->line = __LINE__;
+           
          acquire(&t->lock);
-        t->line = __LINE__;
+         
         if(t->state == SLEEPING && t->chan == chan) {
           t->state = RUNNABLE;
        }
@@ -779,7 +787,7 @@ wakeup(void *chan)
      }
      else
      {
-       t->line = __LINE__;
+        
      }
      
     }
@@ -1044,7 +1052,7 @@ allocthread(struct proc *p)
   struct thread *t;
   
   for(t = p->threads ;t < &p->threads[NTHREAD]; t++) {
-    t->line = __LINE__;
+     
     acquire(&t->lock);
     if(t->state == UNUSED) {
       goto found;
@@ -1057,12 +1065,12 @@ allocthread(struct proc *p)
       release(&t->lock);
     }
   }
-      t->line = __LINE__;
+       
 
   return 0;
   
 found:
-    t->line = __LINE__;
+     
 
   t->tid = alloctid();
   t->state = EMBRYO;
@@ -1070,7 +1078,7 @@ found:
   t->parent = p;
 
   // Allocate a trapframe page.
-   t->line = __LINE__;
+    
    t->trapframe = (struct trapframe*)((uint64)(p->framehead) + (uint64)((t->idx)*sizeof(struct trapframe)));
    t->trap_backup = (struct trapframe*)((uint64)(p->backupframehead) + (uint64)((t->idx)*sizeof(struct trapframe)));
 
@@ -1104,7 +1112,7 @@ kthread_create(void(*start_func)(), void *stack){
   if((t = allocthread(p)) == 0)
     return -1;
 
-t->line = __LINE__;
+ 
   acquire(&t->lock);
 
   *t->trapframe = *mythread()->trapframe;
@@ -1115,13 +1123,13 @@ t->line = __LINE__;
 
   t->trapframe->epc = (uint64)start_func;
   t->trapframe->sp = (uint64)stack;
-t->line = __LINE__;
+ 
   t->trapframe->sp += MAX_STACK_SIZE - 16;
   t->state = RUNNABLE;
     memset(&t->context, 0, sizeof(t->context));
   t->context.ra = (uint64)forkret;
   t->context.sp = t->kstack + PGSIZE;
-t->line = __LINE__;
+ 
   tid = t->tid;
 
   release(&t->lock);
@@ -1143,44 +1151,47 @@ void kthread_exit(int status){
   struct thread *itrthread;
 
   acquire(&wait_lock);
-  t->line = __LINE__;
+   
   acquire(&t->lock);
   t->state = ZOMBIE;
-t->line = __LINE__;
+ 
   for(itrthread = threadproc->threads; itrthread < &threadproc->threads[NTHREAD]; itrthread++){
     if(itrthread != t){
       acquire(&itrthread->lock);
       if(!(itrthread->state == ZOMBIE || itrthread->state == UNUSED)){
         terminate = 0;
+        release(&itrthread->lock);
         break;
       }
       release(&itrthread->lock);  
+    }
   }
-  }
-t->line = __LINE__;
+ 
   if(terminate){
     threadproc->state = ZOMBIE;
     release(&t->lock);
     release(&wait_lock);
     exit(status);
   }
-t->line = __LINE__;
+ 
 
   t->killed = 1;
+
+ 
+  release(&t->lock);
+  wakeup(t);
+   
+  acquire(&t->lock);
+ 
+
   t->xstate = status;
   t->state = ZOMBIE;
-t->line = __LINE__;
-  release(&t->lock);
+
   release(&wait_lock);
-  wakeup(t);
-  t->line = __LINE__;
-  acquire(&t->lock);
-t->line = __LINE__;
   
-  t->line = __LINE__;
+   
   sched();
-  release(&t->lock);
-  }
+}
 
 int
 kthread_join(int thread_id, int *status){
@@ -1199,7 +1210,7 @@ kthread_join(int thread_id, int *status){
 
     for(t = p->threads; t < &p->threads[NTHREAD]; t++){
       if(t != mytrd){
-        t->line = __LINE__;
+         
 
         
         if(t->tid == thread_id){
@@ -1218,9 +1229,9 @@ kthread_join(int thread_id, int *status){
         
       }
     }
-t->line = __LINE__;
+ 
     release(&mytrd->lock);
-t->line = __LINE__;
+ 
     if(!foundthread)
       return -1;
 
@@ -1234,8 +1245,8 @@ t->line = __LINE__;
 int bsem_alloc(){
   int descriptor;
   for(descriptor = 0; descriptor < MAX_BSEM; ++descriptor){
-    if(semaphore_array[descriptor] == DEALLOCED){
-      semaphore_array[descriptor] = UNLOCKED;
+    if(semaphore_array[descriptor].val == DEALLOCED){
+      semaphore_array[descriptor].val = UNLOCKED;
       return descriptor;
     }
   }
@@ -1244,28 +1255,40 @@ int bsem_alloc(){
 
 void bsem_free(int semaphore){
   if(semaphore >= 0 && semaphore < MAX_BSEM)
-    semaphore_array[semaphore] = DEALLOCED;
+    semaphore_array[semaphore].val = DEALLOCED;
 }
 
 void bsem_down(int semaphore){
-  if((semaphore < 0 && semaphore >= MAX_BSEM) || (semaphore_array[semaphore] == DEALLOCED))
+  if((semaphore < 0 || semaphore >= MAX_BSEM) || (semaphore_array[semaphore].val == DEALLOCED))
     return;
 
-  struct thread *t = mythread();
+  acquire(&wait_lock);
+  acquire(&semaphore_array[semaphore].lock);
+  // struct thread *t = mythread();
 
-  if(semaphore_array[semaphore] == LOCKED)
-    sleep(&semaphore_array[semaphore], &t->lock);
-  else
-    semaphore_array[semaphore] = 0;    
+  while(semaphore_array[semaphore].val == LOCKED){
+    release(&semaphore_array[semaphore].lock);
+    sleep(&semaphore_array[semaphore], &wait_lock);
+    acquire(&semaphore_array[semaphore].lock);
+  }
+  
+  semaphore_array[semaphore].val = LOCKED; 
+  release(&semaphore_array[semaphore].lock);  
+  release(&wait_lock);
 }
 
 void bsem_up(int semaphore){
-  if((semaphore < 0 && semaphore >= MAX_BSEM) || (semaphore_array[semaphore] == DEALLOCED))
+  if((semaphore < 0 || semaphore >= MAX_BSEM) || (semaphore_array[semaphore].val == DEALLOCED))
     return;
 
+  acquire(&wait_lock);
+  acquire(&semaphore_array[semaphore].lock);
+
+  semaphore_array[semaphore].val = UNLOCKED;  
   wakeup(&semaphore_array[semaphore]);
 
-  semaphore_array[semaphore] = UNLOCKED;    
+  release(&semaphore_array[semaphore].lock);  
+  release(&wait_lock);
 }
 
 

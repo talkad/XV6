@@ -78,6 +78,7 @@ void thread_test(char *s){
 void bsem_test(char *s){
     int pid;
     int bid = bsem_alloc();
+    printf("boi %d", bid);
     bsem_down(bid);
     printf("1. Parent downing semaphore\n");
     if((pid = fork()) == 0){
@@ -98,36 +99,36 @@ void bsem_test(char *s){
 }
 
 
-// void Csem_test(char *s){
-// 	struct counting_semaphore csem;
-//     int retval;
-//     int pid;
+void Csem_test(char *s){
+	struct counting_semaphore csem;
+    int retval;
+    int pid;
     
     
-//     retval = csem_alloc(&csem,1);
-//     if(retval==-1)
-//     {
-// 		printf("failed csem alloc");
-// 		exit(-1);
-// 	}
-//     csem_down(&csem);
-//     printf("1. Parent downing semaphore\n");
-//     if((pid = fork()) == 0){
-//         printf("2. Child downing semaphore\n");
-//         csem_down(&csem);
-//         printf("4. Child woke up\n");
-//         exit(0);
-//     }
-//     sleep(5);
-//     printf("3. Let the child wait on the semaphore...\n");
-//     sleep(10);
-//     csem_up(&csem);
+    retval = csem_alloc(&csem,1);
+    if(retval==-1)
+    {
+		printf("failed csem alloc");
+		exit(-1);
+	}
+    csem_down(&csem);
+    printf("1. Parent downing semaphore\n");
+    if((pid = fork()) == 0){
+        printf("2. Child downing semaphore\n");
+        csem_down(&csem);
+        printf("4. Child woke up\n");
+        exit(0);
+    }
+    sleep(5);
+    printf("3. Let the child wait on the semaphore...\n");
+    sleep(10);
+    csem_up(&csem);
 
-//     csem_free(&csem);
-//     wait(&pid);
+    csem_free(&csem);
+    wait(&pid);
 
-//     printf("Finished bsem test, make sure that the order of the prints is alright. Meaning (1...2...3...4)\n");
-// }
+    printf("Finished bsem test, make sure that the order of the prints is alright. Meaning (1...2...3...4)\n");
+}
 
 
 
@@ -2883,9 +2884,9 @@ main(int argc, char *argv[])
   } tests[] = {
 	  //ASS 2 Compilation tests:
 	  // {signal_test,"signal_test"},  // new tests
-	  {thread_test,"thread_test"},
-	  // {bsem_test,"bsem_test"},
-	  // {Csem_test,"Csem_test"},
+	  // {thread_test,"thread_test"},
+	  {bsem_test,"bsem_test"},
+	  {Csem_test,"Csem_test"},
 	  
 // ASS 1 tests
 //	{stracetest,"stracetest"},    //18 ticks, need to compare inputs

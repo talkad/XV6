@@ -6,6 +6,12 @@
 #define LOCKED 0
 #define UNLOCKED 1
 
+struct binary_semaphore{
+    struct spinlock lock;
+    int val;
+};
+
+
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -109,8 +115,6 @@ struct thread {
   void *chan;
   int killed;
   struct trapframe *trap_backup;
-  int line;
-
   int idx;
 
 };
