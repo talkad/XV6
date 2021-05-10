@@ -525,6 +525,7 @@ t->line = __LINE__;
   t->xstate = status;
   t->state = ZOMBIE;
 
+  release(&t->lock);
   t->line = __LINE__;
   release(&p->lock);
   t->line = __LINE__;
@@ -554,7 +555,7 @@ t->line = __LINE__;
 
   // Jump into the scheduler, never to return.
 
-
+  acquire(&t->lock);
   sched();
   panic("zombie exit");
 }
@@ -763,11 +764,12 @@ wakeup(void *chan)
 {
   struct proc *p;
   struct thread *t;
+
   for(p = proc; p < &proc[NPROC]; p++) {
     for(t = p->threads; t < &p->threads[NTHREAD]; t++){
      
       if(t != mythread()){
-
+          t->line = __LINE__;
          acquire(&t->lock);
         t->line = __LINE__;
         if(t->state == SLEEPING && t->chan == chan) {
@@ -775,6 +777,11 @@ wakeup(void *chan)
        }
         release(&t->lock);
      }
+     else
+     {
+       t->line = __LINE__;
+     }
+     
     }
   }
 }
@@ -1141,10 +1148,14 @@ void kthread_exit(int status){
   t->state = ZOMBIE;
 t->line = __LINE__;
   for(itrthread = threadproc->threads; itrthread < &threadproc->threads[NTHREAD]; itrthread++){
+    if(itrthread != t){
+      acquire(&itrthread->lock);
       if(!(itrthread->state == ZOMBIE || itrthread->state == UNUSED)){
         terminate = 0;
         break;
       }
+      release(&itrthread->lock);  
+  }
   }
 t->line = __LINE__;
   if(terminate){
@@ -1158,10 +1169,14 @@ t->line = __LINE__;
   t->killed = 1;
   t->xstate = status;
   t->state = ZOMBIE;
-
-  wakeup(t);
-
+t->line = __LINE__;
+  release(&t->lock);
   release(&wait_lock);
+  wakeup(t);
+  t->line = __LINE__;
+  acquire(&t->lock);
+t->line = __LINE__;
+  
   t->line = __LINE__;
   sched();
   release(&t->lock);
@@ -1186,8 +1201,9 @@ kthread_join(int thread_id, int *status){
       if(t != mytrd){
         t->line = __LINE__;
 
-        acquire(&t->lock);
+        
         if(t->tid == thread_id){
+          acquire(&t->lock);
           foundthread = t;
           if(t->state == ZOMBIE){
             *status = t->xstate;
@@ -1197,8 +1213,9 @@ kthread_join(int thread_id, int *status){
             // freethread(t);
             return 0;
           }
+          release(&t->lock);
         }
-        release(&t->lock);
+        
       }
     }
 t->line = __LINE__;
@@ -1207,9 +1224,10 @@ t->line = __LINE__;
     if(!foundthread)
       return -1;
 
-    acquire(&tid_lock);
+    acquire(&wait_lock);
 
-    sleep(foundthread, &tid_lock);  
+    sleep(foundthread, &wait_lock); 
+    release(&wait_lock);
   }
 }
 
