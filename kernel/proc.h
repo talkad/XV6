@@ -150,7 +150,8 @@ struct proc {
 
   struct sigaction sigactions[32];// helper array 
   struct thread threads[NTHREAD];
-
+  struct trapframe *framehead;
+  struct trapframe *backupframehead;
 };
 
 int kthread_create( void ( *start_func ) () , void *stack ) ;

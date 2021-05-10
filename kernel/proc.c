@@ -172,19 +172,21 @@ found:
   // struct trapframe *tf;
   // struct trapframe *backup_tf;
   
-  if((maint->trapframe = (struct trapframe *)kalloc()) == 0){
+  if((p->framehead = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
     release(&p->lock);
     return 0;
   }
 
   // Allocate a backup trapframe page.
-  if((maint->trap_backup = (struct trapframe *)kalloc()) == 0){
+  if((p->backupframehead = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
     release(&p->lock);
     return 0;
   }
 
+  maint->trapframe = p->framehead;
+  maint->trap_backup = p->backupframehead;
   // for(t = p->threads; t < &p->threads[NTHREAD]; t++){
   //   t->trapframe = tf + i;
   //   t->trap_backup = backup_tf + i;
@@ -229,6 +231,13 @@ freeproc(struct proc *p)
 
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+
+  if(p->framehead)
+    kfree(p->framehead); 
+  p->framehead = 0;
+  if(p->backupframehead)
+    kfree(p->backupframehead); 
+  p->backupframehead = 0;     
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -968,11 +977,12 @@ static void
 freethread(struct thread *t)
 {
   if(&t->parent->threads[0] == t){
-    if(t->trapframe)
-     kfree((void*)t->trapframe);
-    if(t->trap_backup)
-      kfree((void*)t->trap_backup);
+    // if(t->trapframe)
+    //  kfree((void*)t->trapframe);
+    // if(t->trap_backup)
+    //   kfree((void*)t->trap_backup);
   }
+  
   else{
       if(t->kstack){
         kfree((void*)t->kstack);
@@ -1024,8 +1034,8 @@ found:
 
   // Allocate a trapframe page.
    t->line = __LINE__;
-   t->trapframe = (struct trapframe*)((uint64)(p->threads[0].trapframe) + (uint64)((t->idx)*sizeof(struct trapframe)));
-   t->trap_backup = (struct trapframe*)((uint64)(p->threads[0].trap_backup) + (uint64)((t->idx)*sizeof(struct trapframe)));
+   t->trapframe = (struct trapframe*)((uint64)(p->framehead) + (uint64)((t->idx)*sizeof(struct trapframe)));
+   t->trap_backup = (struct trapframe*)((uint64)(p->backupframehead) + (uint64)((t->idx)*sizeof(struct trapframe)));
 
   // t->trapframe = t->parent->threads->trapframe + t->idx * sizeof(struct trapframe);
   // t->trap_backup = t->parent->threads->trap_backup + t->idx * sizeof(struct trapframe);
