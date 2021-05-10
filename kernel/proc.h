@@ -109,7 +109,10 @@ struct thread {
   void *chan;
   int killed;
   struct trapframe *trap_backup;
-    int line;
+  int line;
+
+  int idx;
+
 };
 
 // Per-process state
@@ -147,6 +150,7 @@ struct proc {
 
   struct sigaction sigactions[32];// helper array 
   struct thread threads[NTHREAD];
+
 };
 
 int kthread_create( void ( *start_func ) () , void *stack ) ;

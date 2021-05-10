@@ -143,7 +143,7 @@ usertrapret(void)
   // and switches to user mode with sret.
   
   uint64 fn = TRAMPOLINE + (userret - trampoline);
- ((void (*)(uint64,uint64))fn)(TRAPFRAME + (sizeof(struct trapframe) * ((t - t->parent->threads)/sizeof(struct thread))), satp);
+ ((void (*)(uint64,uint64))fn)(TRAPFRAME + (sizeof(struct trapframe) * (t - t->parent->threads)), satp);
 }
 
 void 
@@ -190,7 +190,11 @@ sig_handler(){
   struct proc *p = myproc();
   int i;
   
+  
+
   for(;;){
+    acquire(&p->lock);
+    mythread()->line = __LINE__;
     if(p->freezed)
     {
       for(i = 0; i < 32; i++){
@@ -219,6 +223,7 @@ sig_handler(){
 
     }
     else{
+    mythread()->line = __LINE__;
 
       for(i = 0; i < 32; i++){
         if((p->pending_sig & (1<<i)) != 0 && (p->sig_mask & (1<<i)) == 0 && p->sighandler_flag == 0){
@@ -267,9 +272,14 @@ sig_handler(){
           }
         }
       }
+    mythread()->line = __LINE__;
 
+    release(&p->lock);
     break;
     }
+    mythread()->line = __LINE__;
+
+    release(&p->lock);
   }
 
 }
