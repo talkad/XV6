@@ -66,6 +66,7 @@ void thread_test(char *s){
     int status;
     void* stack = malloc(STACK_SIZE);
     tid = kthread_create(test_thread, stack);
+    printf("I reached with tid %d\n", tid);
     kthread_join(tid,&status);
 
     // tid = kthread_id();

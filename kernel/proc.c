@@ -1081,11 +1081,14 @@ kthread_create(void(*start_func)(), void *stack){
 
   *t->trapframe = *mythread()->trapframe;
 
-  copyin(p->pagetable, (char*)&t->trapframe->epc, (uint64)&start_func, 8);
-  copyin(p->pagetable, (char*)&t->trapframe->sp, (uint64)&stack, 8);
+  // copyin(p->pagetable, (char*)&t->trapframe->epc, (uint64)start_func, 8);
+  // copyin(p->pagetable, (char*)&t->trapframe->sp, (uint64)stack, 8);
+
+  t->trapframe->epc = (uint64)start_func;
+  t->trapframe->sp = (uint64)stack;
 
   t->trapframe->sp += MAX_STACK_SIZE - 16;
-
+  t->state = RUNNABLE;
   return t->tid;
 }
 
