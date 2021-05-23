@@ -67,6 +67,21 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15){
+
+    pte_t *pte = walk(p->pagetable, r_stval(), 0);
+
+    if(*pte & PTE_PG){
+      for(int i = 0; i < MAX_PSYC_PAGES; i++){
+        if(r_stval() == p->swapPages[i].va){
+
+          toRam(i);
+          break;
+          
+        }
+      }
+    }
+
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -81,6 +96,22 @@ usertrap(void)
     yield();
 
   usertrapret();
+}
+
+int
+toRam(int index){
+  struct pageStat *ps;
+  for(ps = myproc()->ramPages; ps < &myproc()->ramPages[MAX_PSYC_PAGES]; ++ps){
+    if(!ps->used){
+      *(ps + index) = *(myproc()->swapPages + index);
+      ps->used = 1;
+      myproc()->swapPages[index].used = 0;
+      myproc()->primaryMemCounter++;
+      myproc()->secondaryMemCounter--;
+      return 0;
+    }
+  }
+  return -1;
 }
 
 //

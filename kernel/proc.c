@@ -141,6 +141,12 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  if(p->pid > 2){
+    release(&p->lock);
+    createSwapFile(p);
+    acquire(&p->lock);
+  }
+
   return p;
 }
 
@@ -150,6 +156,14 @@ found:
 static void
 freeproc(struct proc *p)
 {
+  struct pageStat *ps;
+
+  if(p->pid > 2){
+    release(&p->lock);
+    removeSwapFile(p);
+    acquire(&p->lock);
+  }
+
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
@@ -164,6 +178,14 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  p->primaryMemCounter = 0;
+  p->secondaryMemCounter = 0;
+
+  for(ps = p->ramPages; ps < &p->ramPages[MAX_PSYC_PAGES]; ++ps)
+    ps->used = 0;
+  for(ps = p->swapPages; ps < &p->swapPages[MAX_PSYC_PAGES]; ++ps)
+    ps->used = 0;
 }
 
 // Create a user page table for a given process,

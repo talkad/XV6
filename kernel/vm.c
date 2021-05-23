@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -219,6 +220,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
   char *mem;
   uint64 a;
+  struct proc *p = myproc();
 
   if(newsz < oldsz)
     return oldsz;
@@ -231,6 +233,21 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       return 0;
     }
     memset(mem, 0, PGSIZE);
+    if(p->pid > 2 && p->primaryMemCounter == 16 && p->secondaryMemCounter == 16){
+      // error
+    }
+    if(p->pid > 2 && p->primaryMemCounter < 16){
+      updatePage(p->ramPages, pagetable, a);
+      p->primaryMemCounter++;
+    }
+    else if(p->pid > 2 && p->secondaryMemCounter < 16){
+      updatePage(p->swapPages, pagetable, a);
+      p->secondaryMemCounter++;
+    }
+    else{
+      
+    }
+
     if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
       kfree(mem);
       uvmdealloc(pagetable, a, oldsz);
@@ -238,6 +255,23 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     }
   }
   return newsz;
+}
+
+int 
+updatePage(struct pageStat *pages, pagetable_t pagetable, uint64 va){
+  int i;
+
+  for(i = 0; i < MAX_PSYC_PAGES; i++){
+    if(!pages[i].used){
+      pages[i].used = 1;
+      pages[i].va = va;
+      pages[i].pagetable = pagetable;
+      pages[i].offset = 0;
+      return 0; // success
+    }
+  }
+
+  return -1; // fail
 }
 
 // Deallocate user pages to bring the process size from oldsz to
