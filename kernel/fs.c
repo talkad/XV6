@@ -807,3 +807,21 @@ readFromSwapFile(struct proc * p, char* buffer, uint placeOnFile, uint size)
   p->swapFile->off = placeOnFile;
   return kfileread(p->swapFile, (uint64)buffer,  size);
 }
+
+
+void
+copy_swap_file(struct proc* srcproc, struct proc* destproc){
+  uint i;
+  int size;
+  int filesz = srcproc->filesz;
+  char *buffer = (char*) kalloc();
+
+  for(i = 0; i < filesz; i += PGSIZE){
+    size = min((filesz - i), PGSIZE);
+    readFromSwapFile(srcproc, buffer, i, size);
+    writeToSwapFile(destproc, buffer, i, size);
+  }
+
+  destproc->filesz = filesz;
+  kfree(buffer);
+}

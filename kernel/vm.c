@@ -172,7 +172,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
+    if(((*pte & PTE_V) == 0) && ((*pte & PTE_PG) == 0))
       panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
@@ -225,6 +225,12 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   if(newsz < oldsz)
     return oldsz;
 
+  if(PGROUNDUP(newsz)/PGSIZE > MAX_TOTAL_PAGES - p->primaryMemCounter - p->secondaryMemCounter && p->pid > 2){
+    printf("file too big!\n");
+    p->killed = 1;
+    return 0;
+  }
+
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += PGSIZE){
     mem = kalloc();
@@ -233,32 +239,84 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       return 0;
     }
     memset(mem, 0, PGSIZE);
-    if(p->pid > 2 && p->primaryMemCounter == 16 && p->secondaryMemCounter == 16){
-      // error
-    }
-    if(p->pid > 2 && p->primaryMemCounter < 16){
-      updatePage(p->ramPages, pagetable, a);
-      p->primaryMemCounter++;
-    }
-    else if(p->pid > 2 && p->secondaryMemCounter < 16){
-      updatePage(p->swapPages, pagetable, a);
-      p->secondaryMemCounter++;
-    }
-    else{
-      
-    }
 
     if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
       kfree(mem);
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
+
+    pte_t *pte = walk(pagetable, a, 0);
+
+    if(p->pid > 2 && p->primaryMemCounter < MAX_PSYC_PAGES)
+    {
+      updatePage(p->pages, pagetable, a, pte);
+      p->primaryMemCounter++;
+    }
+    else{
+      swap(a, pagetable);
+    }
+
   }
   return newsz;
 }
 
+void
+swap(uint64 a, pagetable_t pagetable){
+  int swapOut = swap_out_next(); // from ram to disk
+  int swapIn = free_swap_idx();  // from disk to ram
+  struct proc *p = myproc();
+  char *buffer = (char*)(&p->pages[swapOut]); // todo - check that
+
+  writeToSwapFile(p, buffer, swapIn*PGSIZE, PGSIZE);
+  p->pages[swapIn].used = 1;
+  p->pages[swapIn].onRAM = 0;
+  p->pages[swapIn].offset = swapIn*PGSIZE;
+  p->pages[swapIn].pagetable = p->pages[swapIn].pagetable;
+  p->pages[swapIn].pte = p->pages[swapIn].pte;
+  *p->pages[swapIn].pte |= PTE_PG;
+  *p->pages[swapIn].pte &= ~PTE_V;
+  kfree(PTE2PA());
+  p->pages[swapIn].used = 1;
+  p->pages[swapIn].onRAM = 1;
+
+  sfence_vma();
+  p->pages[swapIn]
+
+
+}
+
 int 
-updatePage(struct pageStat *pages, pagetable_t pagetable, uint64 va){
+swap_out_next(){
+  int index = 0;
+  struct pageStat *pg;
+  struct pageStat *pages = myproc()->pages;
+  for(pg = pages; pg < (pages + MAX_TOTAL_PAGES); ++pg){
+    if(pg->onRAM)
+      return index;
+    ++index;  
+  }
+
+  return -1; // never happens
+}
+
+int 
+free_swap_idx(){
+  int index = 0;
+  struct pageStat *pg;
+  struct pageStat *pages = myproc()->pages;
+  for(pg = pages; pg < (pages + MAX_TOTAL_PAGES); ++pg){
+    if(!pg->used)
+      return index;
+    ++index;  
+  }
+
+  return -1; // never happens
+}
+
+ 
+int 
+updatePage(struct pageStat *pages, pagetable_t pagetable, uint64 va, struct pte_t *pte){
   int i;
 
   for(i = 0; i < MAX_PSYC_PAGES; i++){
@@ -267,6 +325,9 @@ updatePage(struct pageStat *pages, pagetable_t pagetable, uint64 va){
       pages[i].va = va;
       pages[i].pagetable = pagetable;
       pages[i].offset = 0;
+      pages[i].onRAM = 1;
+      pages[i].pte = pte;
+
       return 0; // success
     }
   }
@@ -339,8 +400,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+    if(((*pte & PTE_V) == 0) && ((*pte & PTE_PG) == 0))
+      panic("uvmcopy: page not present neither on memory nor disk");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -463,3 +524,5 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+

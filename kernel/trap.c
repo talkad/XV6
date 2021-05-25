@@ -72,9 +72,9 @@ usertrap(void)
     pte_t *pte = walk(p->pagetable, r_stval(), 0);
 
     if(*pte & PTE_PG){
-      for(int i = 0; i < MAX_PSYC_PAGES; i++){
-        if(r_stval() == p->swapPages[i].va){
-
+      for(int i = 0; i < MAX_TOTAL_PAGES; i++){
+        if(r_stval() == p->pages[i].va){
+        
           toRam(i);
           break;
           

@@ -107,19 +107,20 @@ struct proc {
   char name[16];               // Process name (debugging)
 
   struct file *swapFile;
+  int filesz;
 
   int primaryMemCounter;
   int secondaryMemCounter;
 
-  struct pageStat ramPages[MAX_PSYC_PAGES];
-  struct pageStat swapPages[MAX_PSYC_PAGES];
+  struct pageStat pages[MAX_TOTAL_PAGES];
 };
 
 struct pageStat {
-
-  int used;
+  pte_t *pte;
+  char used;
   int offset;
   uint64 va;
   pagetable_t pagetable;
+  char onRAM;
 
 };
