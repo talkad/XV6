@@ -69,19 +69,22 @@ usertrap(void)
     // ok
   } else if(r_scause() == 13 || r_scause() == 15){
 
+    #ifndef NONE
     pte_t *pte = walk(p->pagetable, r_stval(), 0);
 
     if(*pte & PTE_PG){
-      for(int i = 0; i < MAX_TOTAL_PAGES; i++){
-        if(r_stval() == p->pages[i].va){
-        
-          toRam(i);
-          break;
-          
-        }
-      }
-    }
 
+      uint64 va_pf = PGROUNDDOWN(r_stval());
+      toRam(va_pf);
+
+    }
+    else{
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      p->killed = 1;
+    }
+    #endif
+ 
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -98,21 +101,24 @@ usertrap(void)
   usertrapret();
 }
 
-int
-toRam(int index){
-  struct pageStat *ps;
-  for(ps = myproc()->ramPages; ps < &myproc()->ramPages[MAX_PSYC_PAGES]; ++ps){
-    if(!ps->used){
-      *(ps + index) = *(myproc()->swapPages + index);
-      ps->used = 1;
-      myproc()->swapPages[index].used = 0;
-      myproc()->primaryMemCounter++;
-      myproc()->secondaryMemCounter--;
-      return 0;
-    }
-  }
-  return -1;
-}
+// int
+// toRam(uint64 va){
+
+//   uint64 pa = kalloc();
+
+//   struct pageStat *ps;
+//   for(ps = myproc()->ramPages; ps < &myproc()->ramPages[MAX_PSYC_PAGES]; ++ps){
+//     if(!ps->used){
+//       *(ps + index) = *(myproc()->swapPages + index);
+//       ps->used = 1;
+//       myproc()->swapPages[index].used = 0;
+//       myproc()->primaryMemCounter++;
+//       myproc()->secondaryMemCounter--;
+//       return 0;
+//     }
+//   }
+//   return -1;
+// }
 
 //
 // return to user space

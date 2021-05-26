@@ -111,6 +111,15 @@ exec(char *path, char **argv)
   // Commit to the user image.
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
+
+  #ifndef NONE
+  int j;
+
+  for(j = 0; j < MAX_TOTAL_PAGES; ++j){
+    p->pages[j].pte = walk(pagetable, p->pages[j].va, 0);
+  }
+  #endif
+  
   p->sz = sz;
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer

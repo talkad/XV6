@@ -5,7 +5,9 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
 #include "proc.h"
+
 
 /*
  * the kernel's page table.
@@ -16,6 +18,7 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+static char buffer[PGSIZE];
 // Make a direct-map page table for the kernel.
 pagetable_t
 kvmmake(void)
@@ -180,7 +183,22 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
     }
+
+    #ifndef NONE
+    struct proc *p = myproc();
+    int i;
+    pte_t *pte = walk(pagetable, va, 0);
+
+    for(i = 0; i < MAX_TOTAL_PAGES; i++){
+      if(p->pages[i].va == va && p->pages[i].onRAM && *p->pages[i].pte == *pte){
+        memset(&p->pages[i], 0, sizeof(struct pageStat));
+        p->primaryMemCounter --;
+      }
+    }
+
     *pte = 0;
+
+    #endif
   }
 }
 
@@ -211,6 +229,82 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
   memset(mem, 0, PGSIZE);
   mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
   memmove(mem, src, sz);
+}
+
+
+
+int 
+swap_out_next(){
+  int index = 0;
+  struct pageStat *pg;
+  struct pageStat *pages = myproc()->pages;
+  for(pg = pages; pg < (pages + MAX_TOTAL_PAGES); ++pg){
+    if(pg->onRAM)
+      return index;
+    ++index;  
+  }
+
+  return -1; // never happens
+}
+
+int 
+free_swap_idx(){
+  int index = 0;
+  struct pageStat *pg;
+  struct pageStat *pages = myproc()->pages;
+  for(pg = pages; pg < (pages + MAX_TOTAL_PAGES); ++pg){
+    if(!pg->used)
+      return index;
+    ++index;  
+  }
+
+  return -1; // never happens
+}
+
+ 
+int 
+updatePage(struct pageStat *pages, pagetable_t pagetable, uint64 va, pte_t *pte){
+  int i;
+
+  for(i = 0; i < MAX_PSYC_PAGES; i++){
+    if(!pages[i].used){
+      pages[i].used = 1;
+      pages[i].va = va;
+      pages[i].offset = 0;
+      pages[i].onRAM = 1;
+      pages[i].pte = pte;
+
+      return 0; // success
+    }
+  }
+
+  return -1; // fail
+}
+
+void
+toDisk(uint64 a, pagetable_t pagetable){
+  int swapOut = swap_out_next(); // from ram to disk
+  int swapIn = free_swap_idx();  // from disk to ram
+  struct proc *p = myproc();
+  char *buffer = (char*)(&p->pages[swapOut]); // todo - check that
+
+  writeToSwapFile(p, buffer, swapIn*PGSIZE, PGSIZE);
+  p->pages[swapIn].used = 1;
+  p->pages[swapIn].onRAM = 0;
+  p->pages[swapIn].offset = swapIn*PGSIZE;
+  *(p->pages[swapIn].pte) = *(p->pages[swapOut].pte);
+  *(p->pages[swapIn].pte) |= PTE_PG;
+  *(p->pages[swapIn].pte) &= ~PTE_V;
+  kfree((void*)PTE2PA(*p->pages[swapOut].pte) + KERNBASE);
+
+  p->pages[swapOut].used = 1;
+  p->pages[swapOut].onRAM = 1;
+  p->pages[swapOut].offset = 0;
+  p->pages[swapOut].va = a;
+  p->pages[swapOut].pte = walk(pagetable, a, 0);
+
+  p->secondaryMemCounter++;
+  sfence_vma();
 }
 
 // Allocate PTEs and physical memory to grow process from oldsz to
@@ -245,7 +339,8 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
-
+    
+    #ifndef NONE
     pte_t *pte = walk(pagetable, a, 0);
 
     if(p->pid > 2 && p->primaryMemCounter < MAX_PSYC_PAGES)
@@ -254,86 +349,121 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       p->primaryMemCounter++;
     }
     else{
-      swap(a, pagetable);
+      toDisk(a, pagetable);
     }
+    #endif
 
   }
   return newsz;
 }
 
-void
-swap(uint64 a, pagetable_t pagetable){
-  int swapOut = swap_out_next(); // from ram to disk
-  int swapIn = free_swap_idx();  // from disk to ram
+
+int
+find_page(uint64 va){
   struct proc *p = myproc();
-  char *buffer = (char*)(&p->pages[swapOut]); // todo - check that
-
-  writeToSwapFile(p, buffer, swapIn*PGSIZE, PGSIZE);
-  p->pages[swapIn].used = 1;
-  p->pages[swapIn].onRAM = 0;
-  p->pages[swapIn].offset = swapIn*PGSIZE;
-  p->pages[swapIn].pagetable = p->pages[swapIn].pagetable;
-  p->pages[swapIn].pte = p->pages[swapIn].pte;
-  *p->pages[swapIn].pte |= PTE_PG;
-  *p->pages[swapIn].pte &= ~PTE_V;
-  kfree(PTE2PA());
-  p->pages[swapIn].used = 1;
-  p->pages[swapIn].onRAM = 1;
-
-  sfence_vma();
-  p->pages[swapIn]
-
-
-}
-
-int 
-swap_out_next(){
-  int index = 0;
-  struct pageStat *pg;
-  struct pageStat *pages = myproc()->pages;
-  for(pg = pages; pg < (pages + MAX_TOTAL_PAGES); ++pg){
-    if(pg->onRAM)
-      return index;
-    ++index;  
-  }
-
-  return -1; // never happens
-}
-
-int 
-free_swap_idx(){
-  int index = 0;
-  struct pageStat *pg;
-  struct pageStat *pages = myproc()->pages;
-  for(pg = pages; pg < (pages + MAX_TOTAL_PAGES); ++pg){
-    if(!pg->used)
-      return index;
-    ++index;  
-  }
-
-  return -1; // never happens
-}
-
- 
-int 
-updatePage(struct pageStat *pages, pagetable_t pagetable, uint64 va, struct pte_t *pte){
   int i;
 
-  for(i = 0; i < MAX_PSYC_PAGES; i++){
-    if(!pages[i].used){
-      pages[i].used = 1;
-      pages[i].va = va;
-      pages[i].pagetable = pagetable;
-      pages[i].offset = 0;
-      pages[i].onRAM = 1;
-      pages[i].pte = pte;
-
-      return 0; // success
-    }
+  for(i = 0; i < MAX_TOTAL_PAGES ; i++){
+    if(p->pages[i].onRAM == 0 && p->pages[i].va == va)
+      return i;
   }
 
-  return -1; // fail
+  return -1; // will never happen
 }
+
+
+void
+toRam(uint64 va){
+  int index, freeRamIndex, index2;
+  struct proc *p = myproc();
+  uint64 pa = (uint64)kalloc();
+
+  if(pa == 0){
+    kfree((void*)pa);
+    panic("toRAM: bye bye");
+  }
+  
+
+  if(p->primaryMemCounter < MAX_PSYC_PAGES){
+    
+    pte_t *pte_pf = walk(p->pagetable, va, 0);
+    *pte_pf |= PTE_V | PTE_W | PTE_U;
+    *pte_pf &= ~PTE_PG;
+    *pte_pf |= pa;
+
+    index = find_page(va);
+
+    readFromSwapFile(p, buffer, (index*PGSIZE), PGSIZE);
+
+    freeRamIndex = free_swap_idx();
+
+    *(p->pages[freeRamIndex].pte) = *(p->pages[index].pte);
+    p->pages[freeRamIndex].va = p->pages[index].va;
+    p->pages[freeRamIndex].used = 1;
+    p->pages[freeRamIndex].onRAM = 1;
+    p->pages[freeRamIndex].offset = 0;
+
+    p->pages[index].used = 0;
+
+    memmove((void*)va, buffer, PGSIZE);
+
+    p->primaryMemCounter++;
+    p->secondaryMemCounter--;
+  }
+  else{
+    index2 = swap_out_next();
+    
+    pte_t *pte_pf = walk(p->pagetable, va, 0);
+    *pte_pf |= PTE_V | PTE_W | PTE_U;
+    *pte_pf &= ~PTE_PG;
+    *pte_pf |= pa;
+
+    index = find_page(va);
+
+    readFromSwapFile(p, buffer, (index*PGSIZE), PGSIZE);
+
+    freeRamIndex = free_swap_idx();
+
+    *(p->pages[freeRamIndex].pte) = *(p->pages[index].pte);
+    p->pages[freeRamIndex].va = p->pages[index].va;
+    p->pages[freeRamIndex].used = 1;
+    p->pages[freeRamIndex].onRAM = 1;
+    p->pages[freeRamIndex].offset = 0;
+
+    p->pages[index].used = 0;
+
+    uint64 ramPage_pa = PTE2PA(*p->pages[index2].pte) + KERNBASE;
+    
+    //d
+    int swapOut = swap_out_next(); // from ram to disk
+    int swapIn = free_swap_idx();  // from disk to ram
+    char *buffer = (char*)(&p->pages[swapOut]); // todo - check that
+
+    writeToSwapFile(p, buffer, swapIn*PGSIZE, PGSIZE);
+    p->pages[swapIn].used = 1;
+    p->pages[swapIn].onRAM = 0;
+    p->pages[swapIn].offset = swapIn*PGSIZE;
+    *(p->pages[swapIn].pte) = *(p->pages[swapOut].pte);
+    *(p->pages[swapIn].pte) |= PTE_PG;
+    *(p->pages[swapIn].pte) &= ~PTE_V;
+
+    pte_t *pte_ram = walk(p->pagetable, p->pages[index2].va, 0);
+
+    *pte_ram |= PTE_PG;
+    *pte_ram &= ~PTE_V;
+
+    // zine
+    pte_t *pte_pf2 = walk(p->pagetable, va, 0);
+    *pte_pf2 |= PTE_V | PTE_W | PTE_U;
+    *pte_pf2 &= ~PTE_PG;
+    *pte_pf2 |= pa;
+
+    kfree((void*)ramPage_pa);
+    memmove((void*)va, buffer, PGSIZE);
+  }
+
+}
+
 
 // Deallocate user pages to bring the process size from oldsz to
 // newsz.  oldsz and newsz need not be page-aligned, nor does newsz
@@ -342,11 +472,13 @@ updatePage(struct pageStat *pages, pagetable_t pagetable, uint64 va, struct pte_
 uint64
 uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
+
   if(newsz >= oldsz)
     return oldsz;
 
   if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
     int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
+
     uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
   }
 
@@ -402,6 +534,19 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: pte should exist");
     if(((*pte & PTE_V) == 0) && ((*pte & PTE_PG) == 0))
       panic("uvmcopy: page not present neither on memory nor disk");
+
+    #ifndef NONE  
+    pte_t *newpte;
+
+    if((*pte & PTE_PG) != 0){   // new case
+      if((newpte = walk(new, i, 1)) == 0)
+        panic("uvmcopy: bye bye");
+      *newpte = *pte;
+      continue;
+    
+    }
+    #endif
+    
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)

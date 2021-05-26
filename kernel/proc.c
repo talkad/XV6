@@ -141,12 +141,14 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  #ifndef NONE
   if(p->pid > 2){
     release(&p->lock);
     createSwapFile(p);
     acquire(&p->lock);
   }
-
+  #endif
+  
   return p;
 }
 
@@ -156,13 +158,14 @@ found:
 static void
 freeproc(struct proc *p)
 {
-  struct pageStat *ps;
-
+  // struct pageStat *ps;
+  #ifndef NONE
   if(p->pid > 2){
     release(&p->lock);
     removeSwapFile(p);
     acquire(&p->lock);
   }
+  #endif
 
   if(p->trapframe)
     kfree((void*)p->trapframe);
@@ -182,10 +185,10 @@ freeproc(struct proc *p)
   p->primaryMemCounter = 0;
   p->secondaryMemCounter = 0;
 
-  for(ps = p->ramPages; ps < &p->ramPages[MAX_PSYC_PAGES]; ++ps)
-    ps->used = 0;
-  for(ps = p->swapPages; ps < &p->swapPages[MAX_PSYC_PAGES]; ++ps)
-    ps->used = 0;
+  // for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps)
+  //   ps->used = 0;
+
+  memset(p->pages, 0, MAX_TOTAL_PAGES * sizeof(struct pageStat));
 }
 
 // Create a user page table for a given process,
@@ -289,6 +292,15 @@ growproc(int n)
   return 0;
 }
 
+void
+copy_pageStats(struct proc *np, struct proc *p){
+  int i;
+
+  for(i = 0; i < MAX_TOTAL_PAGES; i++){
+    np->pages[i] = p->pages[i];
+  }
+}
+
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
 int
@@ -331,8 +343,16 @@ fork(void)
 
   acquire(&wait_lock);
   np->parent = p;
-  release(&wait_lock);
 
+  #ifndef NONE
+  copy_pageStats(np, p);
+
+  if(p->pid > 2)
+    copySwapFile(p, np);
+  #endif 
+
+  release(&wait_lock);
+  
   acquire(&np->lock);
   np->state = RUNNABLE;
   release(&np->lock);
@@ -425,10 +445,15 @@ wait(uint64 addr)
           pid = np->pid;
           if(addr != 0 && copyout(p->pagetable, addr, (char *)&np->xstate,
                                   sizeof(np->xstate)) < 0) {
+            #ifndef NONE
+            memset(np->pages, 0, MAX_TOTAL_PAGES * sizeof(struct pageStat));
+            #endif
+
             release(&np->lock);
             release(&wait_lock);
             return -1;
           }
+
           freeproc(np);
           release(&np->lock);
           release(&wait_lock);

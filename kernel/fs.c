@@ -810,7 +810,7 @@ readFromSwapFile(struct proc * p, char* buffer, uint placeOnFile, uint size)
 
 
 void
-copy_swap_file(struct proc* srcproc, struct proc* destproc){
+copySwapFile(struct proc* srcproc, struct proc* destproc){
   uint i;
   int size;
   int filesz = srcproc->filesz;

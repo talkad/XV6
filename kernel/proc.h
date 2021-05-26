@@ -80,6 +80,15 @@ struct trapframe {
   /* 280 */ uint64 t6;
 };
 
+
+struct pageStat {
+  pte_t *pte;
+  char used;
+  int offset;
+  uint64 va;
+  char onRAM;
+};
+
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 // Per-process state
@@ -113,14 +122,4 @@ struct proc {
   int secondaryMemCounter;
 
   struct pageStat pages[MAX_TOTAL_PAGES];
-};
-
-struct pageStat {
-  pte_t *pte;
-  char used;
-  int offset;
-  uint64 va;
-  pagetable_t pagetable;
-  char onRAM;
-
 };
