@@ -80,7 +80,6 @@ struct trapframe {
   /* 280 */ uint64 t6;
 };
 
-
 struct pageStat {
   pte_t *pte;
   char used;
