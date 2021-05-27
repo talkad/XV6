@@ -287,16 +287,15 @@ toDisk(uint64 a, pagetable_t pagetable){
   int swapOut = swap_out_next(); // from ram to disk
   int swapIn = free_swap_idx();  // from disk to ram
   struct proc *p = myproc();
-  char *buffer = (char*)(&p->pages[swapOut]); // todo - check that
-
-  writeToSwapFile(p, buffer, swapIn*PGSIZE, PGSIZE);
+  
+  writeToSwapFile(p, (char*)(p->pages[swapOut].va), swapIn*PGSIZE, PGSIZE);
   p->pages[swapIn].used = 1;
   p->pages[swapIn].onRAM = 0;
   p->pages[swapIn].offset = swapIn*PGSIZE;
   *(p->pages[swapIn].pte) = *(p->pages[swapOut].pte);
   *(p->pages[swapIn].pte) |= PTE_PG;
   *(p->pages[swapIn].pte) &= ~PTE_V;
-  kfree((void*)PTE2PA(*p->pages[swapOut].pte) + KERNBASE);
+  kfree((void*)PTE2PA(*p->pages[swapOut].pte));
 
   p->pages[swapOut].used = 1;
   p->pages[swapOut].onRAM = 1;
@@ -433,14 +432,13 @@ toRam(uint64 va){
 
     p->pages[index].used = 0;
 
-    uint64 ramPage_pa = PTE2PA(*p->pages[index2].pte) + KERNBASE;
+    uint64 ramPage_pa = PTE2PA(*p->pages[index2].pte);
     
     //d
     int swapOut = swap_out_next(); // from ram to disk
     int swapIn = free_swap_idx();  // from disk to ram
-    char *buffer = (char*)(&p->pages[swapOut]); // todo - check that
 
-    writeToSwapFile(p, buffer, swapIn*PGSIZE, PGSIZE);
+    writeToSwapFile(p, (char*)(p->pages[swapOut].va), swapIn*PGSIZE, PGSIZE);
     p->pages[swapIn].used = 1;
     p->pages[swapIn].onRAM = 0;
     p->pages[swapIn].offset = swapIn*PGSIZE;
