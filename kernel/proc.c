@@ -165,6 +165,11 @@ freeproc(struct proc *p)
     removeSwapFile(p);
     acquire(&p->lock);
   }
+
+  
+  p->primaryMemCounter = 0;
+  p->secondaryMemCounter = 0;
+  memset(p->pages, 0, MAX_TOTAL_PAGES * sizeof(struct pageStat));
   #endif
 
   if(p->trapframe)
@@ -182,13 +187,9 @@ freeproc(struct proc *p)
   p->xstate = 0;
   p->state = UNUSED;
 
-  p->primaryMemCounter = 0;
-  p->secondaryMemCounter = 0;
-
   // for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps)
   //   ps->used = 0;
 
-  memset(p->pages, 0, MAX_TOTAL_PAGES * sizeof(struct pageStat));
 }
 
 // Create a user page table for a given process,
