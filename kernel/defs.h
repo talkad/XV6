@@ -112,6 +112,7 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
+uint            nextTime(struct proc*);
 
 // swtch.S
 void            swtch(struct context*, struct context*);
@@ -185,6 +186,7 @@ int             copyinstr(pagetable_t, char *, uint64, uint64);
 void            toRam(uint64 va);
 void            toDisk(uint64 va, pagetable_t pagetable);
 pte_t*          walk(pagetable_t pagetable, uint64 va, int alloc);
+int             replace_page(uint64, int);
 
 // plic.c
 void            plicinit(void);

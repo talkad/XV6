@@ -86,6 +86,7 @@ struct pageStat {
   int offset;
   uint64 va;
   char onRAM;
+  uint scfifo_time;
 };
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
@@ -121,4 +122,7 @@ struct proc {
   int secondaryMemCounter;
 
   struct pageStat pages[MAX_TOTAL_PAGES];
+
+  uint scFIFO_time;
+ 
 };

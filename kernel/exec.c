@@ -108,33 +108,42 @@ exec(char *path, char **argv)
       last = s+1;
   safestrcpy(p->name, last, sizeof(p->name));
     
+  #ifndef NONE
+  if(p->pid > 2){
+    removeSwapFile(p);
+    createSwapFile(p);
+
+    for(int j = 0; j < MAX_TOTAL_PAGES; ++j){
+      p->pages[j].used = 0;
+      p->pages[j].va = -1;
+      p->pages[j].offset = -1;
+    }
+  }
+  // for(int j = 0; j < MAX_TOTAL_PAGES; j++){
+  //   if(walk(pagetable, p->pages[j].va, 0) == 0){
+  //     p->pages[j].used = 0;
+  //   }
+  //   // p->pages[j].pte = walk(pagetable, p->pages[j].va, 0);
+  // }
+  #endif
+
   // Commit to the user image.
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
-
-  #ifndef NONE
-
-  for(int j = 0; j < MAX_TOTAL_PAGES; j++){
-    if(walk(pagetable, p->pages[j].va, 0) == 0){
-      p->pages[j].used = 0;
-    }
-    // p->pages[j].pte = walk(pagetable, p->pages[j].va, 0);
-  }
-  #endif
   
   p->sz = sz;
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
-  printf("ccccccccc\n");
+  // printf("ccccccccc\n");
   proc_freepagetable(oldpagetable, oldsz);
-  printf("hello there\n");
+  // printf("hello there\n");
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
   if(pagetable)
   {
-    printf("bbbbbbbbbbb");
+    // printf("bbbbbbbbbbb");
     proc_freepagetable(pagetable, sz);
   }
   if(ip){

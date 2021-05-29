@@ -147,6 +147,11 @@ found:
     createSwapFile(p);
     acquire(&p->lock);
   }
+
+    #ifdef SCFIFO
+    p->scFIFO_time = 0;
+    #endif
+
   #endif
   
   return p;
@@ -164,6 +169,10 @@ freeproc(struct proc *p)
     release(&p->lock);
     removeSwapFile(p);
     acquire(&p->lock);
+
+    #ifdef SCFIFO
+    p->scFIFO_time = 0;
+    #endif
   }
 
   
@@ -232,13 +241,13 @@ proc_pagetable(struct proc *p)
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
-  printf("hello again\n");
+  // printf("hello again\n");
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
-  printf("general kenobi\n");
+  // printf("general kenobi\n");
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
-  printf("idk anymorte\n");
+  // printf("idk anymorte\n");
   uvmfree(pagetable, sz);
-  printf("idkkkkkkkkkkkkk\n");
+  // printf("idkkkkkkkkkkkkk\n");
 }
 
 // a user program that calls exec("/init")
@@ -301,11 +310,13 @@ growproc(int n)
 
 void
 copy_pageStats(struct proc *np, struct proc *p){
+  acquire(&np->lock);
   int i;
 
   for(i = 0; i < MAX_TOTAL_PAGES; i++){
     np->pages[i] = p->pages[i];
   }
+  release(&np->lock);
 }
 
 // Create a new process, copying the parent.
@@ -708,4 +719,11 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+uint
+nextTime(struct proc *p){
+  uint time = p->scFIFO_time;
+  p->scFIFO_time++;
+  return time;
 }

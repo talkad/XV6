@@ -52,7 +52,7 @@ usertrap(void)
   
   if(r_scause() == 8){
     // system call
-
+    
     if(p->killed)
       exit(-1);
 
@@ -71,17 +71,25 @@ usertrap(void)
 
   #ifndef NONE
     else if(r_scause() == 12 || r_scause() == 13 || r_scause() == 15){
-
+      uint64 va_pf = PGROUNDDOWN(r_stval());
       printf("she is screaming A");
-      pte_t *pte = walk(p->pagetable, r_stval(), 0);
+      pte_t *pte = walk(p->pagetable, va_pf, 0);
 
-      if(*pte & PTE_PG){
-      printf("she is screaming B");
+      if(pte){
+        if(*pte & PTE_PG){
+           printf("she is screaming B");
 
-       uint64 va_pf = PGROUNDDOWN(r_stval());
-       toRam(va_pf);
+           replace_page(va_pf, 0);
 
-    }
+        }
+        else{
+          printf("she is screaming C");
+
+          printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+          printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+          p->killed = 1;
+        }
+      }
       else{
               printf("she is screaming C");
 
@@ -89,8 +97,6 @@ usertrap(void)
        printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
        p->killed = 1;
     }
-    
- 
   } 
   #endif
   
