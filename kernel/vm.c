@@ -8,7 +8,6 @@
 #include "spinlock.h"
 #include "proc.h"
 
-
 /*
  * the kernel's page table.
  */
@@ -264,7 +263,7 @@ free_swap_idx(){
 
  
 int 
-updatePage(struct pageStat *pages, pagetable_t pagetable, uint64 va, pte_t *pte){
+updatePage(struct pageStat *pages, uint64 va, pte_t *pte){
   int i;
 
   for(i = 0; i < MAX_PSYC_PAGES; i++){
@@ -274,7 +273,6 @@ updatePage(struct pageStat *pages, pagetable_t pagetable, uint64 va, pte_t *pte)
       pages[i].offset = 0;
       pages[i].onRAM = 1;
       pages[i].pte = pte;
-
       return 0; // success
     }
   }
@@ -287,8 +285,17 @@ toDisk(uint64 a, pagetable_t pagetable){
   int swapOut = swap_out_next(); // from ram to disk
   int swapIn = free_swap_idx();  // from disk to ram
   struct proc *p = myproc();
-  
-  writeToSwapFile(p, (char*)(p->pages[swapOut].va), swapIn*PGSIZE, PGSIZE);
+  printf("aaaaaaaaaaaaaaaaaaaaaaaaaaa\n");
+  printf("bbbbbbbbbbbbb %p\n", p->pages[swapOut].pte);
+
+  pte_t * pte = walk(p->pagetable, p->pages[swapOut].va, 0);
+
+  printf("%p", pte);
+
+  char* tmp = (char*)PTE2PA(*pte);
+
+  printf("%s\n", tmp);
+  writeToSwapFile(p, tmp, (uint)(swapIn*PGSIZE), PGSIZE);
   p->pages[swapIn].used = 1;
   p->pages[swapIn].onRAM = 0;
   p->pages[swapIn].offset = swapIn*PGSIZE;
@@ -341,15 +348,22 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     }
     
     #ifndef NONE
-    pte_t *pte = walk(pagetable, a, 0);
 
-    if(p->pid > 2 && p->primaryMemCounter < MAX_PSYC_PAGES)
-    {
-      updatePage(p->pages, pagetable, a, pte);
-      p->primaryMemCounter++;
-    }
-    else{
-      toDisk(a, pagetable);
+          printf("she is screaming pid %d ram counter %d\n", p->pid, p->primaryMemCounter);
+
+
+    if(p->pid > 2){
+       pte_t *pte = walk(pagetable, a, 0);
+
+      if(p->primaryMemCounter < MAX_PSYC_PAGES)
+      {
+        printf("she is screaming love me\n");
+        updatePage(p->pages, a, pte);
+        p->primaryMemCounter++;
+      }
+      else{
+        toDisk(a, pagetable);
+      }
     }
     #endif
 
@@ -393,7 +407,7 @@ toRam(uint64 va){
 
     index = find_page(va);
 
-    readFromSwapFile(p, buffer, (index*PGSIZE), PGSIZE);
+    readFromSwapFile(p, buffer, (uint)(index*PGSIZE), PGSIZE);
 
     freeRamIndex = free_swap_idx();
 
@@ -420,7 +434,7 @@ toRam(uint64 va){
 
     index = find_page(va);
 
-    readFromSwapFile(p, buffer, (index*PGSIZE), PGSIZE);
+    readFromSwapFile(p, buffer, (uint)(index*PGSIZE), PGSIZE);
 
     freeRamIndex = free_swap_idx();
 
@@ -438,7 +452,7 @@ toRam(uint64 va){
     int swapOut = swap_out_next(); // from ram to disk
     int swapIn = free_swap_idx();  // from disk to ram
 
-    writeToSwapFile(p, (char*)(p->pages[swapOut].va), swapIn*PGSIZE, PGSIZE);
+    writeToSwapFile(p, (char*)(PTE2PA(*p->pages[swapOut].pte)), (uint)(swapIn*PGSIZE), PGSIZE);
     p->pages[swapIn].used = 1;
     p->pages[swapIn].onRAM = 0;
     p->pages[swapIn].offset = swapIn*PGSIZE;

@@ -808,20 +808,19 @@ readFromSwapFile(struct proc * p, char* buffer, uint placeOnFile, uint size)
   return kfileread(p->swapFile, (uint64)buffer,  size);
 }
 
-
 void
 copySwapFile(struct proc* srcproc, struct proc* destproc){
   uint i;
-  int size;
   int filesz = srcproc->filesz;
-  char *buffer = (char*) kalloc();
-
-  for(i = 0; i < filesz; i += PGSIZE){
-    size = min((filesz - i), PGSIZE);
-    readFromSwapFile(srcproc, buffer, i, size);
-    writeToSwapFile(destproc, buffer, i, size);
+  printf("ddddddddddddd");
+  char buffer[128];
+  printf("cccccccccccccccccccc");
+  int amount_read = 0;
+  for(i = 0; i < filesz; i += amount_read){
+    amount_read = readFromSwapFile(srcproc, buffer, i, sizeof(buffer));
+    writeToSwapFile(destproc, buffer, i, sizeof(buffer));
   }
 
   destproc->filesz = filesz;
-  kfree(buffer);
+
 }

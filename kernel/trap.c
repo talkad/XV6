@@ -70,7 +70,7 @@ usertrap(void)
   }
 
   #ifndef NONE
-    else if(r_scause() == 13 || r_scause() == 15){
+    else if(r_scause() == 12 || r_scause() == 13 || r_scause() == 15){
 
       printf("she is screaming A");
       pte_t *pte = walk(p->pagetable, r_stval(), 0);

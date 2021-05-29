@@ -175,8 +175,10 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
+  if(p->pagetable){
+    printf("aaaaaaaaaaa");
     proc_freepagetable(p->pagetable, p->sz);
+  }
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -230,9 +232,13 @@ proc_pagetable(struct proc *p)
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
+  printf("hello again\n");
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+  printf("general kenobi\n");
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  printf("idk anymorte\n");
   uvmfree(pagetable, sz);
+  printf("idkkkkkkkkkkkkk\n");
 }
 
 // a user program that calls exec("/init")
@@ -353,6 +359,7 @@ fork(void)
   #endif 
 
   release(&wait_lock);
+  
   
   acquire(&np->lock);
   np->state = RUNNABLE;

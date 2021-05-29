@@ -113,23 +113,30 @@ exec(char *path, char **argv)
   p->pagetable = pagetable;
 
   #ifndef NONE
-  int j;
 
-  for(j = 0; j < MAX_TOTAL_PAGES; ++j){
-    p->pages[j].pte = walk(pagetable, p->pages[j].va, 0);
+  for(int j = 0; j < MAX_TOTAL_PAGES; j++){
+    if(walk(pagetable, p->pages[j].va, 0) == 0){
+      p->pages[j].used = 0;
+    }
+    // p->pages[j].pte = walk(pagetable, p->pages[j].va, 0);
   }
   #endif
   
   p->sz = sz;
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
+  printf("ccccccccc\n");
   proc_freepagetable(oldpagetable, oldsz);
+  printf("hello there\n");
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
   if(pagetable)
+  {
+    printf("bbbbbbbbbbb");
     proc_freepagetable(pagetable, sz);
+  }
   if(ip){
     iunlockput(ip);
     end_op();
