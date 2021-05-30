@@ -362,6 +362,15 @@ void add_ram_pageStat(struct proc *p, int index, uint64 va){
   #ifdef SCFIFO
   p->pages[index].scfifo_time = nextTime(p);
   #endif
+
+  #ifdef LAPA
+  p->pages[index].counter = 0xFFFFFFFF;
+  #endif;
+
+  #ifdef NFUA
+  p->pages[index].counter = 0;
+  #endif
+
 }
 
 void add_disk_pageStat(struct proc *p, int index, uint64 va, int offset){
@@ -426,7 +435,56 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA){
   return ramIndex;
 }
 
+void update_counter_aging(struct proc *p){
+  struct pageStat *ps;
+  pte_t *pte;
+  for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps){
+    if(ps->onRAM){
+      pte = walk(p->pagetable, ps->va, 0);
+      if((*pte & PTE_U)){
+          ps->counter >>= 1;
+          if((*pte & PTE_A)){
+            ps->counter |= (1 << 31);
+            *pte &= ~PTE_A;
+          }
+      }
+    }
+  }
+}
 
+int
+lapa_paging(uint64 va, int onRam){
+  uint min_counter = __INT_MAX__;
+  int min_ones_counter = __INT_MAX__, ones_counter = 0, swapIndex = -1, counterIndex = 0;
+  struct proc *p = myproc();
+  struct pageStat *ps;
+
+  for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps){
+    if(ps->onRAM){
+      for(int i = 0; i < 32; ++i){
+        if(((ps->counter >> i) & 1) == 1)
+          ++ones_counter;
+      }
+
+      if(ones_counter < min_ones_counter){
+        min_ones_counter = ones_counter;
+        min_counter = ps->counter;
+        swapIndex = counterIndex;
+      }
+      else if(ones_counter = min_ones_counter){
+        if(ps->counter < min_counter){
+          min_counter = ps->counter;
+          swapIndex = counterIndex;
+        }
+      }
+
+      ones_counter = 0;
+    }
+    ++counterIndex;
+  }
+
+return twoWaySwap(p,p->pages[swapIndex].va, va);
+}
 
 int
 scfifo_paging(uint64 va, int onRam){
@@ -470,6 +528,10 @@ replace_page(uint64 va, int onRam){
   #ifdef SCFIFO
   ramIndex = scfifo_paging(va, onRam);
   #endif
+  
+  #ifdef LAPA
+  ramIndex = lapa_paging(va, onRam);
+  #endif
 
   return ramIndex;
 }
@@ -497,10 +559,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     if(p->pid > 2){
       if(p->primaryMemCounter < MAX_PSYC_PAGES){
         int freeIndex = free_swap_idx();
-        p->pages[freeIndex].used = 1;
-        p->pages[freeIndex].va = a;
-        p->pages[freeIndex].offset = -1;
-        p->pages[freeIndex].onRAM = 1;
+        add_ram_pageStat(p, freeIndex, a);
       }
       else{
         toDisk(a, pagetable);

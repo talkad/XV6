@@ -87,6 +87,7 @@ struct pageStat {
   uint64 va;
   char onRAM;
   uint scfifo_time;
+  uint counter;
 };
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };

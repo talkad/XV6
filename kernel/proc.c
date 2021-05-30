@@ -185,7 +185,7 @@ freeproc(struct proc *p)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
   if(p->pagetable){
-    printf("aaaaaaaaaaa");
+    // printf("aaaaaaaaaaa");
     proc_freepagetable(p->pagetable, p->sz);
   }
   p->pagetable = 0;
@@ -525,6 +525,12 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        #ifdef LAPA
+        if(p->pid >2)
+          update_counter_aging(p);
+        #endif
+        
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
