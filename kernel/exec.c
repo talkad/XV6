@@ -110,13 +110,27 @@ exec(char *path, char **argv)
     
   #ifndef NONE
   if(p->pid > 2){
-    removeSwapFile(p);
-    createSwapFile(p);
-
+    p->primaryMemCounter = 0;
+    p->secondaryMemCounter = 0;
     for(int j = 0; j < MAX_TOTAL_PAGES; ++j){
       p->pages[j].used = 0;
       p->pages[j].va = -1;
       p->pages[j].offset = -1;
+      p->pages[j].scfifo_time = 0;
+    }
+
+    i=0;
+    for (uint64 a = 0; a < sz; a+= PGSIZE){    
+      p->pages[i].used = 1;
+      p->pages[i].va = a;
+      p->pages[i].offset = -1;
+      p->pages[i].onRAM = 1;
+      p->primaryMemCounter++;
+
+      #ifdef SCFIFO
+      p->pages[i].scfifo_time = nextTime(p);
+      #endif
+      i++;
     }
   }
   // for(int j = 0; j < MAX_TOTAL_PAGES; j++){

@@ -165,15 +165,15 @@ freeproc(struct proc *p)
 {
   // struct pageStat *ps;
   #ifndef NONE
-  if(p->pid > 2){
-    release(&p->lock);
-    removeSwapFile(p);
-    acquire(&p->lock);
+  // if(p->pid > 2){
+  //   release(&p->lock);
+  //   removeSwapFile(p);
+  //   acquire(&p->lock);
 
     #ifdef SCFIFO
     p->scFIFO_time = 0;
     #endif
-  }
+  // }
 
   
   p->primaryMemCounter = 0;
@@ -362,15 +362,15 @@ fork(void)
   acquire(&wait_lock);
   np->parent = p;
 
-  #ifndef NONE
-  copy_pageStats(np, p);
-
-  if(p->pid > 2)
-    copySwapFile(p, np);
-  #endif 
-
   release(&wait_lock);
   
+   #ifndef NONE
+  
+  if(p->pid > 2){
+    copy_pageStats(np, p);
+    copySwapFile(p, np);
+  }
+  #endif 
   
   acquire(&np->lock);
   np->state = RUNNABLE;
@@ -404,6 +404,12 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  #ifndef NONE
+    if (p->pid > 2){
+      removeSwapFile(p);
+    }
+  #endif
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

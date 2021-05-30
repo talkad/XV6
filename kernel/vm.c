@@ -305,10 +305,8 @@ toDisk(uint64 a, pagetable_t pagetable){
   int swapOut = swap_out_next(); // from ram to disk
   int swapIn = free_swap_idx();  // from disk to ram
   struct proc *p = myproc();
-  printf("aaaaaaaaaaaaaaaaaaaaaaaaaaa\n");
-  printf("bbbbbbbbbbbbb %p\n", p->pages[swapOut].pte);
 
-  pte_t * pte = walk(p->pagetable, p->pages[swapOut].va, 0);
+  pte_t *pte = walk(p->pagetable, p->pages[swapOut].va, 0);
 
   printf("%p\n", pte);
   printf("%p\n", *pte);
@@ -336,6 +334,44 @@ toDisk(uint64 a, pagetable_t pagetable){
 }
 
 int
+va_index(struct proc *p, uint64 va, int onRam){
+  int index = -1;
+  for(int i = 0; i < MAX_TOTAL_PAGES; ++i){
+    if((p->pages[i].onRAM == onRam) && (p->pages[i].va == va)){
+      index = i;
+      break;
+   }
+  }   
+
+  return index;
+}
+
+void remove_pageStat(struct proc *p, int index){
+  p->pages[index].used = 0;
+  p->pages[index].va = -1;
+  p->pages[index].offset = -1;
+  p->pages[index].scfifo_time = 0;
+}
+
+void add_ram_pageStat(struct proc *p, int index, uint64 va){
+  p->pages[index].used = 1;
+  p->pages[index].offset = -1;
+  p->pages[index].va = va;
+  p->pages[index].onRAM = 1;
+
+  #ifdef SCFIFO
+  p->pages[index].scfifo_time = nextTime(p);
+  #endif
+}
+
+void add_disk_pageStat(struct proc *p, int index, uint64 va, int offset){
+  p->pages[index].used = 1;
+  p->pages[index].offset = offset;
+  p->pages[index].va = va;
+  p->pages[index].onRAM = 0;
+}
+
+int
 twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA){
   int ramIndex = -1, diskIndex = -1;
   pte_t *pte = walk(p->pagetable, swapOutVA, 0);
@@ -345,44 +381,20 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA){
     panic("no more memory bye bye");
 
   if((*pte & PTE_U)){
-    for(int i = 0; i < MAX_TOTAL_PAGES; ++i){
-      if(p->pages[i].va == swapOutVA){
-        ramIndex = i;
-        break;
-      }
-    }
-
-    p->pages[ramIndex].used = 0;
-    p->pages[ramIndex].va = -1;
-    p->pages[ramIndex].offset = -1;
-    p->pages[ramIndex].scfifo_time = 0;
-
+    ramIndex = va_index(p, swapOutVA, 1);
+    remove_pageStat(p, ramIndex);
     *pte &= ~PTE_V;
   }
 
   if(ramIndex == -1)
     panic("twoWaySwap - ramIndex - should not happen");
 
-  for(int j = 0; j < MAX_TOTAL_PAGES; ++j){
-    if(!p->pages[j].onRAM){
-      if(p->pages[j].va == swapInVA){
-        diskIndex = j;
-        break;
-      }
-    }
-  }
+  diskIndex = va_index(p, swapInVA, 0);
 
   if(diskIndex == -1)
     panic("twoWaySwap - diskIndex - should not happen");
 
-  p->pages[ramIndex].used = 1;
-  p->pages[ramIndex].offset = -1;
-  p->pages[ramIndex].va = swapInVA;
-  p->pages[ramIndex].onRAM = 1;
-
-  #ifdef SCFIFO
-  p->pages[ramIndex].scfifo_time = nextTime(p);
-  #endif
+  add_ram_pageStat(p, ramIndex, swapInVA);
 
   readFromSwapFile(p, buffer, (diskIndex * PGSIZE), PGSIZE);
   
@@ -393,10 +405,7 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA){
 
   memmove(pa, buffer, PGSIZE);
   
-  p->pages[diskIndex].used = 0;
-  p->pages[diskIndex].va = -1;
-  p->pages[diskIndex].offset = -1;
-  p->pages[diskIndex].scfifo_time = 0;
+  remove_pageStat(p, diskIndex);
 
   pte = walk(p->pagetable, swapInVA, 0);
   *pte &= ~PTE_PG;
@@ -408,9 +417,7 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA){
 
   writeToSwapFile(p, buffer, (diskIndex * PGSIZE), PGSIZE);
 
-  p->pages[diskIndex].used = 1;
-  p->pages[diskIndex].va = swapOutVA;
-  p->pages[diskIndex].offset = diskIndex * PGSIZE;
+  add_disk_pageStat(p, diskIndex, swapOutVA, (diskIndex * PGSIZE));
 
   kfree((void*)(PTE2PA(*pte)));
   *pte |= PTE_PG;
@@ -418,6 +425,8 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA){
 
   return ramIndex;
 }
+
+
 
 int
 scfifo_paging(uint64 va, int onRam){
@@ -513,24 +522,27 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     }
     
     #ifndef NONE
-
-          printf("she is screaming pid %d ram counter %d\n", p->pid, p->primaryMemCounter);
-
-
-    if(p->pid > 2){
-       pte_t *pte = walk(pagetable, a, 0);
-
-      if(p->primaryMemCounter < MAX_PSYC_PAGES)
-      {
-        printf("she is screaming love me\n");
-        updatePage(p->pages, a, pte);
-        p->primaryMemCounter++;
-      }
-      else{
-        toDisk(a, pagetable);
-      }
-    }
+    
     #endif
+    // #ifndef NONE
+
+          // printf("she is screaming pid %d ram counter %d\n", p->pid, p->primaryMemCounter);
+
+
+    // if(p->pid > 2){
+    //    pte_t *pte = walk(pagetable, a, 0);
+
+    //   if(p->primaryMemCounter < MAX_PSYC_PAGES)
+    //   {
+    //     printf("she is screaming love me\n");
+    //     updatePage(p->pages, a, pte);
+    //     p->primaryMemCounter++;
+    //   }
+    //   else{
+    //     toDisk(a, pagetable);
+    //   }
+    // }
+    // #endif
 
   }
   return newsz;
@@ -551,98 +563,98 @@ find_page(uint64 va){
 }
 
 
-void
-toRam(uint64 va){
-  int index, freeRamIndex, index2;
-  struct proc *p = myproc();
-  uint64 pa = (uint64)kalloc();
+// void
+// toRam(uint64 va){
+//   int index, freeRamIndex, index2;
+//   struct proc *p = myproc();
+//   uint64 pa = (uint64)kalloc();
 
-  if(pa == 0){
-    kfree((void*)pa);
-    panic("toRAM: bye bye");
-  }
+//   if(pa == 0){
+//     kfree((void*)pa);
+//     panic("toRAM: bye bye");
+//   }
   
 
-  if(p->primaryMemCounter < MAX_PSYC_PAGES){
+//   if(p->primaryMemCounter < MAX_PSYC_PAGES){
     
-    pte_t *pte_pf = walk(p->pagetable, va, 0);
-    *pte_pf |= PTE_V | PTE_W | PTE_U;
-    *pte_pf &= ~PTE_PG;
-    *pte_pf |= pa;
+//     pte_t *pte_pf = walk(p->pagetable, va, 0);
+//     *pte_pf |= PTE_V | PTE_W | PTE_U;
+//     *pte_pf &= ~PTE_PG;
+//     *pte_pf |= pa;
 
-    index = find_page(va);
+//     index = find_page(va);
 
-    readFromSwapFile(p, buffer, (index*PGSIZE), PGSIZE);
+//     readFromSwapFile(p, buffer, (index*PGSIZE), PGSIZE);
 
-    freeRamIndex = free_swap_idx();
+//     freeRamIndex = free_swap_idx();
 
-    p->pages[freeRamIndex].va = va;
-    p->pages[freeRamIndex].used = 1;
-    p->pages[freeRamIndex].onRAM = 1;
-    p->pages[freeRamIndex].offset = -1;
+//     p->pages[freeRamIndex].va = va;
+//     p->pages[freeRamIndex].used = 1;
+//     p->pages[freeRamIndex].onRAM = 1;
+//     p->pages[freeRamIndex].offset = -1;
 
-    p->pages[index].used = 0;
-    p->pages[index].offset = -1;
-    p->pages[index].va = -1;
+//     p->pages[index].used = 0;
+//     p->pages[index].offset = -1;
+//     p->pages[index].va = -1;
 
-    memmove((void*)va, buffer, PGSIZE);
+//     memmove((void*)va, buffer, PGSIZE);
 
-    p->primaryMemCounter++;
-    p->secondaryMemCounter--;
-  }
-  else{
-    index2 = swap_out_next();
+//     p->primaryMemCounter++;
+//     p->secondaryMemCounter--;
+//   }
+//   else{
+//     index2 = swap_out_next();
     
-    pte_t *pte_pf = walk(p->pagetable, va, 0);
-    *pte_pf |= PTE_V | PTE_W | PTE_U;
-    *pte_pf &= ~PTE_PG;
-    *pte_pf |= pa;
+//     pte_t *pte_pf = walk(p->pagetable, va, 0);
+//     *pte_pf |= PTE_V | PTE_W | PTE_U;
+//     *pte_pf &= ~PTE_PG;
+//     *pte_pf |= pa;
 
-    index = find_page(va);
+//     index = find_page(va);
 
-    readFromSwapFile(p, buffer, (index*PGSIZE), PGSIZE);
+//     readFromSwapFile(p, buffer, (index*PGSIZE), PGSIZE);
 
-    freeRamIndex = free_swap_idx();
+//     freeRamIndex = free_swap_idx();
 
-    p->pages[freeRamIndex].va = va;
-    p->pages[freeRamIndex].used = 1;
-    p->pages[freeRamIndex].onRAM = 1;
-    p->pages[freeRamIndex].offset = 0;
+//     p->pages[freeRamIndex].va = va;
+//     p->pages[freeRamIndex].used = 1;
+//     p->pages[freeRamIndex].onRAM = 1;
+//     p->pages[freeRamIndex].offset = 0;
 
-    p->pages[index].used = 0;
-    p->pages[index].offset = -1;
-    p->pages[index].va = -1;
+//     p->pages[index].used = 0;
+//     p->pages[index].offset = -1;
+//     p->pages[index].va = -1;
 
-    uint64 ramPage_pa = PTE2PA(*walk(p->pagetable, p->pages[index2].va, 0));
+//     uint64 ramPage_pa = PTE2PA(*walk(p->pagetable, p->pages[index2].va, 0));
     
-    //d
-    int swapOut = swap_out_next(); // from ram to disk
-    int swapIn = free_swap_idx();  // from disk to ram
+//     //d
+//     int swapOut = swap_out_next(); // from ram to disk
+//     int swapIn = free_swap_idx();  // from disk to ram
 
-    writeToSwapFile(p, (char*)(PTE2PA(*p->pages[swapOut].pte)), (uint)(swapIn*PGSIZE), PGSIZE);
-    p->pages[swapIn].used = 1;
-    p->pages[swapIn].onRAM = 0;
-    p->pages[swapIn].offset = swapIn*PGSIZE;
-    *(p->pages[swapIn].pte) = *(p->pages[swapOut].pte);
-    *(p->pages[swapIn].pte) |= PTE_PG;
-    *(p->pages[swapIn].pte) &= ~PTE_V;
+//     writeToSwapFile(p, (char*)(PTE2PA(*p->pages[swapOut].pte)), (uint)(swapIn*PGSIZE), PGSIZE);
+//     p->pages[swapIn].used = 1;
+//     p->pages[swapIn].onRAM = 0;
+//     p->pages[swapIn].offset = swapIn*PGSIZE;
+//     *(p->pages[swapIn].pte) = *(p->pages[swapOut].pte);
+//     *(p->pages[swapIn].pte) |= PTE_PG;
+//     *(p->pages[swapIn].pte) &= ~PTE_V;
 
-    pte_t *pte_ram = walk(p->pagetable, p->pages[index2].va, 0);
+//     pte_t *pte_ram = walk(p->pagetable, p->pages[index2].va, 0);
 
-    *pte_ram |= PTE_PG;
-    *pte_ram &= ~PTE_V;
+//     *pte_ram |= PTE_PG;
+//     *pte_ram &= ~PTE_V;
 
-    // zine
-    pte_t *pte_pf2 = walk(p->pagetable, va, 0);
-    *pte_pf2 |= PTE_V | PTE_W | PTE_U;
-    *pte_pf2 &= ~PTE_PG;
-    *pte_pf2 |= pa;
+//     // zine
+//     pte_t *pte_pf2 = walk(p->pagetable, va, 0);
+//     *pte_pf2 |= PTE_V | PTE_W | PTE_U;
+//     *pte_pf2 &= ~PTE_PG;
+//     *pte_pf2 |= pa;
 
-    kfree((void*)ramPage_pa);
-    memmove((void*)va, buffer, PGSIZE);
-  }
+//     kfree((void*)ramPage_pa);
+//     memmove((void*)va, buffer, PGSIZE);
+//   }
 
-}
+// }
 
 
 // Deallocate user pages to bring the process size from oldsz to
