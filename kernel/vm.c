@@ -167,8 +167,11 @@ mappage(pagetable_t pagetable, uint64 va, uint64 pa, int perm)
 
   a = PGROUNDDOWN(va);
   
-    if((pte = walk(pagetable, a, 1)) == 0)
+    if((pte = walk(pagetable, a, 1)) == 0){
+    //  printf("she is screaming B\n");
+
       return -1;
+    }
     if(*pte & PTE_V)
       panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
@@ -259,7 +262,7 @@ swap_out_next(){
   struct pageStat *pg;
   struct pageStat *pages = myproc()->pages;
   for(pg = pages; pg < (pages + MAX_TOTAL_PAGES); ++pg){
-    if(pg->onRAM)
+    if(pg->used && pg->onRAM)
       return index;
     ++index;  
   }
@@ -308,6 +311,8 @@ toDisk(uint64 a, pagetable_t pagetable){
 
   pte_t *pte = walk(p->pagetable, p->pages[swapOut].va, 0);
 
+      // printf("she is screaming D\n");
+
   printf("%p\n", pte);
   printf("%p\n", *pte);
   // char* tmp = (char*)PTE2PA(*pte);
@@ -337,7 +342,7 @@ int
 va_index(struct proc *p, uint64 va, int onRam){
   int index = -1;
   for(int i = 0; i < MAX_TOTAL_PAGES; ++i){
-    if((p->pages[i].onRAM == onRam) && (p->pages[i].va == va)){
+    if(p->pages[i].used && ((p->pages[i].onRAM == onRam) && (p->pages[i].va == va))){
       index = i;
       break;
    }
@@ -365,7 +370,7 @@ void add_ram_pageStat(struct proc *p, int index, uint64 va){
 
   #ifdef LAPA
   p->pages[index].counter = 0xFFFFFFFF;
-  #endif;
+  #endif
 
   #ifdef NFUA
   p->pages[index].counter = 0;
@@ -383,6 +388,8 @@ void add_disk_pageStat(struct proc *p, int index, uint64 va, int offset){
 int
 twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA){
   int ramIndex = -1, diskIndex = -1;
+  // printf("she is screaming E\n");
+
   pte_t *pte = walk(p->pagetable, swapOutVA, 0);
   void *pa = kalloc();
 
@@ -416,9 +423,13 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA){
   
   remove_pageStat(p, diskIndex);
 
+  // printf("she is screaming G\n");
+
   pte = walk(p->pagetable, swapInVA, 0);
   *pte &= ~PTE_PG;
   *pte |= PTE_V;
+
+  // printf("she is screaming H\n");
 
   pte = walk(p->pagetable, swapOutVA, 0);
 
@@ -439,7 +450,9 @@ void update_counter_aging(struct proc *p){
   struct pageStat *ps;
   pte_t *pte;
   for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps){
-    if(ps->onRAM){
+    if(ps->used && ps->onRAM){
+      // printf("she is screaming F pid: %d\n", p->pid);
+
       pte = walk(p->pagetable, ps->va, 0);
       if((*pte & PTE_U)){
           ps->counter >>= 1;
@@ -460,7 +473,7 @@ lapa_paging(uint64 va, int onRam){
   struct pageStat *ps;
 
   for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps){
-    if(ps->onRAM){
+    if(ps->u && ps->onRAM){
       for(int i = 0; i < 32; ++i){
         if(((ps->counter >> i) & 1) == 1)
           ++ones_counter;
@@ -471,7 +484,7 @@ lapa_paging(uint64 va, int onRam){
         min_counter = ps->counter;
         swapIndex = counterIndex;
       }
-      else if(ones_counter = min_ones_counter){
+      else if(ones_counter == min_ones_counter){
         if(ps->counter < min_counter){
           min_counter = ps->counter;
           swapIndex = counterIndex;
@@ -505,6 +518,8 @@ scfifo_paging(uint64 va, int onRam){
         }
       }
     }
+
+    // printf("she is screaming I\n");
 
     pte = walk(p->pagetable, p->pages[swapIndex].va, 0);
     
@@ -793,6 +808,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   if(p->pid > 2){
     if((*pte & PTE_PG)){
+      // printf("she is screaming J\n");
+
       if(!(new_pte = walk(new, i, 0)))
         return -1;
     *new_pte &= ~PTE_V;
