@@ -526,7 +526,7 @@ scheduler(void)
         p->state = RUNNING;
         c->proc = p;
 
-        #ifdef LAPA
+        #if defined(LAPA) || defined(NFUA)
         if(p->pid >2)
           update_counter_aging(p);
         #endif

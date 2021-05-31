@@ -175,7 +175,6 @@ mappage(pagetable_t pagetable, uint64 va, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
-
   return 0;
 }
 
@@ -319,6 +318,7 @@ toDisk(uint64 a, pagetable_t pagetable){
 
   // printf("%s\n", tmp);
   writeToSwapFile(p, (char*)PTE2PA(*pte), (uint)(swapIn*PGSIZE), PGSIZE);
+
   p->pages[swapIn].used = 1;
   p->pages[swapIn].onRAM = 0;
   p->pages[swapIn].offset = swapIn*PGSIZE;
@@ -356,6 +356,7 @@ void remove_pageStat(struct proc *p, int index){
   p->pages[index].va = -1;
   p->pages[index].offset = -1;
   p->pages[index].scfifo_time = 0;
+  p->pages[index].counter = 0;
 }
 
 void add_ram_pageStat(struct proc *p, int index, uint64 va){
@@ -386,7 +387,7 @@ void add_disk_pageStat(struct proc *p, int index, uint64 va, int offset){
 }
 
 int
-twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA){
+twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA, int swapDirection){
   int ramIndex = -1, diskIndex = -1;
   // printf("she is screaming E\n");
 
@@ -405,10 +406,12 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA){
   if(ramIndex == -1)
     panic("twoWaySwap - ramIndex - should not happen");
 
-  diskIndex = va_index(p, swapInVA, 0);
+  diskIndex = (swapDirection == TWOWAYSWAP) ? va_index(p, swapInVA, 0) : free_swap_idx();
 
   if(diskIndex == -1)
     panic("twoWaySwap - diskIndex - should not happen");
+
+  if(swapDirection == TWOWAYSWAP){
 
   add_ram_pageStat(p, ramIndex, swapInVA);
 
@@ -430,12 +433,11 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA){
   *pte |= PTE_V;
 
   // printf("she is screaming H\n");
+  }
 
   pte = walk(p->pagetable, swapOutVA, 0);
 
-  memmove(buffer, (void*)(PTE2PA(*pte)), PGSIZE);
-
-  writeToSwapFile(p, buffer, (diskIndex * PGSIZE), PGSIZE);
+  writeToSwapFile(p, (void*)(PTE2PA(*pte)), (diskIndex * PGSIZE), PGSIZE);
 
   add_disk_pageStat(p, diskIndex, swapOutVA, (diskIndex * PGSIZE));
 
@@ -443,6 +445,11 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA){
   *pte |= PTE_PG;
   *pte &= ~PTE_V;
 
+  if(swapDirection == TODISKSWAP){
+    p->primaryMemCounter--;
+    p->secondaryMemCounter++;
+  }
+  
   return ramIndex;
 }
 
@@ -466,14 +473,34 @@ void update_counter_aging(struct proc *p){
 }
 
 int
-lapa_paging(uint64 va, int onRam){
+nfua_paging(uint64 va, int swapDirection){
+  int swapIndex = -1, counter_index = 0;
+  uint min_counter = __INT_MAX__;
+  struct proc *p = myproc();
+  struct pageStat *ps;
+
+  for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps){
+    if(ps->used && ps->onRAM){
+      if(ps->counter < min_counter){
+        min_counter = ps->counter;
+        swapIndex = counter_index;
+      }
+    }
+    ++counter_index;
+  }
+
+  return twoWaySwap(p, p->pages[swapIndex].va, va, swapDirection);
+}
+
+int
+lapa_paging(uint64 va, int swapDirection){
   uint min_counter = __INT_MAX__;
   int min_ones_counter = __INT_MAX__, ones_counter = 0, swapIndex = -1, counterIndex = 0;
   struct proc *p = myproc();
   struct pageStat *ps;
 
   for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps){
-    if(ps->u && ps->onRAM){
+    if(ps->used && ps->onRAM){
       for(int i = 0; i < 32; ++i){
         if(((ps->counter >> i) & 1) == 1)
           ++ones_counter;
@@ -496,11 +523,11 @@ lapa_paging(uint64 va, int onRam){
     ++counterIndex;
   }
 
-return twoWaySwap(p,p->pages[swapIndex].va, va);
+return twoWaySwap(p,p->pages[swapIndex].va, va, swapDirection);
 }
 
 int
-scfifo_paging(uint64 va, int onRam){
+scfifo_paging(uint64 va, int swapDirection){
   struct proc *p = myproc();
   pte_t *pte;
   uint time = __INT_MAX__;
@@ -508,7 +535,7 @@ scfifo_paging(uint64 va, int onRam){
 
   for(;;){
     for(int i = 0; i< MAX_TOTAL_PAGES; ++i){
-      if(p->pages[i].onRAM){
+      if(p->pages[i].used && p->pages[i].onRAM){
         pte = walk(p->pagetable, p->pages[i].va, 0);
         if((*pte & PTE_U)){
           if(p->pages[i].scfifo_time < time){
@@ -533,19 +560,23 @@ scfifo_paging(uint64 va, int onRam){
       break;
   }
 
-  return twoWaySwap(p, p->pages[swapIndex].va, va);
+  return twoWaySwap(p, p->pages[swapIndex].va, va, swapDirection);
 }
 
 int
-replace_page(uint64 va, int onRam){
+replace_page(uint64 va, int swapDirection){
   int ramIndex = -1;
 
   #ifdef SCFIFO
-  ramIndex = scfifo_paging(va, onRam);
+  ramIndex = scfifo_paging(va, swapDirection);
   #endif
   
   #ifdef LAPA
-  ramIndex = lapa_paging(va, onRam);
+  ramIndex = lapa_paging(va, swapDirection);
+  #endif
+
+  #ifdef NFUA
+  ramIndex = nfua_paging(va, swapDirection);
   #endif
 
   return ramIndex;
@@ -577,7 +608,9 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
         add_ram_pageStat(p, freeIndex, a);
       }
       else{
-        toDisk(a, pagetable);
+        if(p->secondaryMemCounter == MAX_PSYC_PAGES)
+          panic("memory full both on ram and disk");
+        replace_page(a, TODISKSWAP);
       } 
     }
     #endif
@@ -629,7 +662,7 @@ find_page(uint64 va){
   int i;
 
   for(i = 0; i < MAX_TOTAL_PAGES ; i++){
-    if(p->pages[i].onRAM == 0 && p->pages[i].va == va)
+    if(p->pages[i].used && (p->pages[i].onRAM == 0 && p->pages[i].va == va))
       return i;
   }
 

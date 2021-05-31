@@ -13,3 +13,5 @@
 #define MAXPATH      128   // maximum file path name
 #define MAX_PSYC_PAGES 16
 #define MAX_TOTAL_PAGES 32
+#define TODISKSWAP 0
+#define TWOWAYSWAP 1

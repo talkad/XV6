@@ -188,6 +188,7 @@ void            toDisk(uint64 va, pagetable_t pagetable);
 pte_t*          walk(pagetable_t pagetable, uint64 va, int alloc);
 int             replace_page(uint64, int);
 void            update_counter_aging(struct proc*);
+void            remove_pageStat(struct proc*, int);
 
 // plic.c
 void            plicinit(void);

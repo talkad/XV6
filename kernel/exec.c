@@ -21,6 +21,30 @@ exec(char *path, char **argv)
   pagetable_t pagetable = 0, oldpagetable;
   struct proc *p = myproc();
 
+  #ifndef NONE
+  if(p->pid > 2){
+    p->primaryMemCounter = 0;
+    p->secondaryMemCounter = 0;
+    for(int j = 0; j < MAX_TOTAL_PAGES; ++j)
+      remove_pageStat(p, j);
+    
+
+    // i=0;
+    // for (uint64 a = 0; a < sz; a+= PGSIZE){    
+    //   p->pages[i].used = 1;
+    //   p->pages[i].va = a;
+    //   p->pages[i].offset = -1;
+    //   p->pages[i].onRAM = 1;
+    //   p->primaryMemCounter++;
+
+    //   #ifdef SCFIFO
+    //   p->pages[i].scfifo_time = nextTime(p);
+    //   #endif
+    //   i++;
+    // }
+  }
+  #endif
+
   begin_op();
 
   if((ip = namei(path)) == 0){
@@ -108,38 +132,13 @@ exec(char *path, char **argv)
       last = s+1;
   safestrcpy(p->name, last, sizeof(p->name));
     
-  #ifndef NONE
-  if(p->pid > 2){
-    p->primaryMemCounter = 0;
-    p->secondaryMemCounter = 0;
-    for(int j = 0; j < MAX_TOTAL_PAGES; ++j){
-      p->pages[j].used = 0;
-      p->pages[j].va = -1;
-      p->pages[j].offset = -1;
-      p->pages[j].scfifo_time = 0;
-    }
-
-    i=0;
-    for (uint64 a = 0; a < sz; a+= PGSIZE){    
-      p->pages[i].used = 1;
-      p->pages[i].va = a;
-      p->pages[i].offset = -1;
-      p->pages[i].onRAM = 1;
-      p->primaryMemCounter++;
-
-      #ifdef SCFIFO
-      p->pages[i].scfifo_time = nextTime(p);
-      #endif
-      i++;
-    }
-  }
+  
   // for(int j = 0; j < MAX_TOTAL_PAGES; j++){
   //   if(walk(pagetable, p->pages[j].va, 0) == 0){
   //     p->pages[j].used = 0;
   //   }
   //   // p->pages[j].pte = walk(pagetable, p->pages[j].va, 0);
   // }
-  #endif
 
   // Commit to the user image.
   oldpagetable = p->pagetable;
