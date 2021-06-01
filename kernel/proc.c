@@ -240,7 +240,7 @@ proc_pagetable(struct proc *p)
 // physical memory it refers to.
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
-{
+{ 
   // printf("hello again\n");
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   // printf("general kenobi\n");
@@ -297,14 +297,28 @@ growproc(int n)
   struct proc *p = myproc();
 
   sz = p->sz;
+
+  // #ifndef NONE
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
-  } else if(n < 0){
+  } else
+   if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
+
   p->sz = sz;
+  // #endif
+
+  // #ifdef NONE
+  // if(n < 0){
+  //   sz = uvmdealloc(p->pagetable, sz, sz + n);
+  // }
+
+  // p->sz += n;
+  // #endif
+
   return 0;
 }
 

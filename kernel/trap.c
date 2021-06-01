@@ -78,7 +78,7 @@ usertrap(void)
         //   panic("very interesting");
         // }
         // else 
-        if(*pte & PTE_PG){
+        if(!(*pte & PTE_V) && (*pte & PTE_PG)){
           //  printf("she is screaming B\n");
 
            replace_page(va_pf, TWOWAYSWAP);
@@ -101,7 +101,13 @@ usertrap(void)
     }
   } 
   #endif
-  
+
+  // #ifdef NONE
+  // else if((r_scause() == 12 || r_scause() == 13 || r_scause() == 15)){
+  //   uint va_pf = PGROUNDDOWN(r_stval());
+  //   uvmalloc(p->pagetable, va_pf, (va_pf + PGSIZE));
+  // }
+  // #endif
    else if((which_dev = devintr()) != 0){
     // ok
   }

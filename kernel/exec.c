@@ -74,7 +74,7 @@ exec(char *path, char **argv)
       goto bad;
     uint64 sz1;
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
-      goto bad;
+      goto bad; 
     sz = sz1;
     if(ph.vaddr % PGSIZE != 0)
       goto bad;

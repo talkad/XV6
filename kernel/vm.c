@@ -446,10 +446,11 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA, int swapDirection)
   *pte &= ~PTE_V;
 
   if(swapDirection == TODISKSWAP){
-    p->primaryMemCounter--;
+    add_ram_pageStat(p, ramIndex, swapInVA);
+    // p->primaryMemCounter--;
     p->secondaryMemCounter++;
   }
-  
+
   return ramIndex;
 }
 
@@ -569,6 +570,7 @@ replace_page(uint64 va, int swapDirection){
 
   #ifdef SCFIFO
   ramIndex = scfifo_paging(va, swapDirection);
+  printf("HELLO SCFIFO");
   #endif
   
   #ifdef LAPA
@@ -590,27 +592,34 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   char *mem;
   uint64 a;
   struct proc *p = myproc();
-
+  printf("PAGES ALLOC %d\n", PGROUNDUP(newsz-oldsz)/PGSIZE);
+  
   if(newsz < oldsz)
     return oldsz;
-
   if(PGROUNDUP(newsz-oldsz)/PGSIZE > MAX_TOTAL_PAGES - p->primaryMemCounter - p->secondaryMemCounter && p->pid > 2){
+    printf("ALLOC PAGES %d\n RAM COUNT %d\n DISK COUNT %d\n MAX PAGES %d\n", PGROUNDUP(newsz-oldsz)/PGSIZE, p->primaryMemCounter, p->secondaryMemCounter, MAX_TOTAL_PAGES);
     panic("file too big!\n");
   }
-
+  // int ramIndex;
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += PGSIZE){
 
     #ifndef NONE
     if(p->pid > 2){
       if(p->primaryMemCounter < MAX_PSYC_PAGES){
+        // counter++;
+        printf("RAM COUNT %d\n", p->primaryMemCounter);
         int freeIndex = free_swap_idx();
         add_ram_pageStat(p, freeIndex, a);
+        p->primaryMemCounter++;
       }
       else{
+        // counter++;
         if(p->secondaryMemCounter == MAX_PSYC_PAGES)
           panic("memory full both on ram and disk");
         replace_page(a, TODISKSWAP);
+        // add_ram_pageStat(p, ramIndex, a);
+        printf("DISK COUNT %d\n", p->secondaryMemCounter);
       } 
     }
     #endif
@@ -627,31 +636,9 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
-    
-    #ifndef NONE
-    
-    #endif
-    // #ifndef NONE
-
-          // printf("she is screaming pid %d ram counter %d\n", p->pid, p->primaryMemCounter);
-
-
-    // if(p->pid > 2){
-    //    pte_t *pte = walk(pagetable, a, 0);
-
-    //   if(p->primaryMemCounter < MAX_PSYC_PAGES)
-    //   {
-    //     printf("she is screaming love me\n");
-    //     updatePage(p->pages, a, pte);
-    //     p->primaryMemCounter++;
-    //   }
-    //   else{
-    //     toDisk(a, pagetable);
-    //   }
-    // }
-    // #endif
-
   }
+  // printf("DISK ENTIRES %d\n", counter);
+
   return newsz;
 }
 
@@ -777,7 +764,7 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 
   if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
     int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
-
+    // printf("aaaaaa");
     uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
   }
 
@@ -809,6 +796,7 @@ freewalk(pagetable_t pagetable)
 void
 uvmfree(pagetable_t pagetable, uint64 sz)
 {
+      // printf("bbbbb");
   if(sz > 0)
     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
   freewalk(pagetable);
@@ -877,6 +865,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   return 0;
 
  err:
+      printf("ccccccc");
+
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
 }
