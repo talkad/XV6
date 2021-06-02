@@ -80,7 +80,7 @@ usertrap(void)
         // else 
         if(!(*pte & PTE_V) && (*pte & PTE_PG)){
           //  printf("she is screaming B\n");
-
+            printf("HERE?!?!?! VA - %p\n", va_pf);
            replace_page(va_pf, TWOWAYSWAP);
 
         }

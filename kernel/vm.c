@@ -275,11 +275,12 @@ free_swap_idx(){
   struct pageStat *pg;
   struct pageStat *pages = myproc()->pages;
   for(pg = pages; pg < (pages + MAX_TOTAL_PAGES); ++pg){
-    if(!pg->used)
+    if(!pg->used){
+      printf("DISK INDEX TODISKSWAP %d, IS USED %d\n", index, pg->used);
       return index;
+    }
     ++index;  
   }
-
   return -1; // never happens
 }
 
@@ -341,13 +342,18 @@ toDisk(uint64 a, pagetable_t pagetable){
 int
 va_index(struct proc *p, uint64 va, int onRam){
   int index = -1;
+  if(!onRam){
+  printf("VA IS HERE: %p\n", va);
+  }
   for(int i = 0; i < MAX_TOTAL_PAGES; ++i){
+    printf("PAGE INFO:\n PAGE INDEX: %d\n PAGE USED: %d\n PAGE ON RAM: %d\n PAGE VA: %p\n", i, p->pages[i].used, p->pages[i].onRAM, p->pages[i].va);
     if(p->pages[i].used && ((p->pages[i].onRAM == onRam) && (p->pages[i].va == va))){
       index = i;
       break;
    }
   }   
-
+  if(!onRam)
+    printf("DISK INDEX TWOWAYSWAP %d\n", index);
   return index;
 }
 
@@ -384,6 +390,11 @@ void add_disk_pageStat(struct proc *p, int index, uint64 va, int offset){
   p->pages[index].offset = offset;
   p->pages[index].va = va;
   p->pages[index].onRAM = 0;
+  printf("ADD TO DISK INFO\n");
+  printf("DISK VA: %p\n", va);
+  printf("DISK OFFSET: %d\n", offset);
+  printf("DISK INDEX: %d\n", index);
+
 }
 
 int
@@ -399,6 +410,8 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA, int swapDirection)
 
   if((*pte & PTE_U)){
     ramIndex = va_index(p, swapOutVA, 1);
+    diskIndex = (swapDirection == TWOWAYSWAP) ? va_index(p, swapInVA, 0) : free_swap_idx();
+    // printf("WHAT IS GOING ON HERE?! VA - %p, INDEX - %d\n", swapOutVA, ramIndex);
     remove_pageStat(p, ramIndex);
     *pte &= ~PTE_V;
   }
@@ -406,20 +419,27 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA, int swapDirection)
   if(ramIndex == -1)
     panic("twoWaySwap - ramIndex - should not happen");
 
-  diskIndex = (swapDirection == TWOWAYSWAP) ? va_index(p, swapInVA, 0) : free_swap_idx();
+  // printf("ARE YOU SURE? %d\n", swapDirection);
+  // if(swapDirection == TODISKSWAP)
+  //   diskIndex = free_swap_idx();
+  // else if(swapDirection == TWOWAYSWAP)
+  //   diskIndex = va_index(p, swapInVA, 0);
+  // else
+  //   panic("not gonna happen");
+  
 
   if(diskIndex == -1)
     panic("twoWaySwap - diskIndex - should not happen");
 
   if(swapDirection == TWOWAYSWAP){
+    printf("LINE %d, VA: %p\n", __LINE__, swapInVA);
+    add_ram_pageStat(p, ramIndex, swapInVA);
 
-  add_ram_pageStat(p, ramIndex, swapInVA);
-
-  readFromSwapFile(p, buffer, (diskIndex * PGSIZE), PGSIZE);
-  
-  if(mappage(p->pagetable, swapInVA, (uint64)pa, PTE_W| PTE_X | PTE_R | PTE_U) == -1){
-    kfree(pa);
-    panic("mappage failed bye bye");
+    readFromSwapFile(p, buffer, (diskIndex * PGSIZE), PGSIZE);
+    
+    if(mappage(p->pagetable, swapInVA, (uint64)pa, PTE_W| PTE_X | PTE_R | PTE_U) == -1){
+      kfree(pa);
+      panic("mappage failed bye bye");
   }
 
   memmove(pa, buffer, PGSIZE);
@@ -446,6 +466,8 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA, int swapDirection)
   *pte &= ~PTE_V;
 
   if(swapDirection == TODISKSWAP){
+    printf("LINE %d, VA: %p\n", __LINE__, swapInVA);
+
     add_ram_pageStat(p, ramIndex, swapInVA);
     // p->primaryMemCounter--;
     p->secondaryMemCounter++;
@@ -570,15 +592,17 @@ replace_page(uint64 va, int swapDirection){
 
   #ifdef SCFIFO
   ramIndex = scfifo_paging(va, swapDirection);
-  printf("HELLO SCFIFO");
+  printf("HELLO SCFIFO %d\n", ramIndex);
   #endif
   
   #ifdef LAPA
   ramIndex = lapa_paging(va, swapDirection);
+    printf("HELLO LAPA %d\n", ramIndex);
   #endif
 
   #ifdef NFUA
   ramIndex = nfua_paging(va, swapDirection);
+  printf("HELLO NFUA %d\n", ramIndex);
   #endif
 
   return ramIndex;
@@ -610,11 +634,13 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
         // counter++;
         printf("RAM COUNT %d\n", p->primaryMemCounter);
         int freeIndex = free_swap_idx();
+        printf("LINE %d, VA: %p\n", __LINE__, a);
         add_ram_pageStat(p, freeIndex, a);
         p->primaryMemCounter++;
       }
       else{
         // counter++;
+        printf("helllooooooooooooooooooooo\n");
         if(p->secondaryMemCounter == MAX_PSYC_PAGES)
           panic("memory full both on ram and disk");
         replace_page(a, TODISKSWAP);
@@ -636,6 +662,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
+
   }
   // printf("DISK ENTIRES %d\n", counter);
 

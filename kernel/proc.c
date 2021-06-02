@@ -330,6 +330,9 @@ copy_pageStats(struct proc *np, struct proc *p){
   for(i = 0; i < MAX_TOTAL_PAGES; i++){
     np->pages[i] = p->pages[i];
   }
+
+  np->primaryMemCounter = p->primaryMemCounter;
+  np->secondaryMemCounter = p->secondaryMemCounter;
   release(&np->lock);
 }
 
@@ -378,7 +381,7 @@ fork(void)
 
   release(&wait_lock);
   
-   #ifndef NONE
+  #ifndef NONE
   
   if(p->pid > 2){
     copy_pageStats(np, p);
