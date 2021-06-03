@@ -339,9 +339,9 @@ toDisk(uint64 a, pagetable_t pagetable){
 int
 va_index(struct proc *p, uint64 va, int onRam){
   int index = -1;
-  // if(!onRam){
-  // printf("VA IS HERE: %p\n", va);
-  // }
+  if(!onRam){
+  printf("VA IS HERE: %p\n", va);
+  }
   for(int i = 0; i < MAX_TOTAL_PAGES; ++i){
     // printf("PAGE INFO:\n PAGE INDEX: %d\n PAGE USED: %d\n PAGE ON RAM: %d\n PAGE VA: %p\n", i, p->pages[i].used, p->pages[i].onRAM, p->pages[i].va);
     if(p->pages[i].used && ((p->pages[i].onRAM == onRam) && (p->pages[i].va == va))){
@@ -349,6 +349,7 @@ va_index(struct proc *p, uint64 va, int onRam){
       break;
    }
   }   
+  // printf("HELLO?!?!!");
   // if(!onRam)
   //   printf("DISK INDEX TWOWAYSWAP %d\n", index);
   return index;
@@ -367,6 +368,9 @@ void add_ram_pageStat(struct proc *p, int index, uint64 va){
   p->pages[index].offset = -1;
   p->pages[index].va = va;
   p->pages[index].onRAM = 1;
+
+  // printf("ADD TO RAM INFO\n");
+  // printf("RAM INDEX: %d\n", index);
 
   #ifdef SCFIFO
   p->pages[index].scfifo_time = nextTime(p);
@@ -505,7 +509,7 @@ nfua_paging(uint64 va, int swapDirection){
   struct pageStat *ps;
 
   for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps){
-    if((ps->used && ps->onRAM) && index >= USERPAGESSTART){
+    if((ps->used && ps->onRAM) && index >=USERPAGESSTART){
       if(ps->counter < min_counter){
         min_counter = ps->counter;
         swapIndex = counter_index;
@@ -521,12 +525,12 @@ nfua_paging(uint64 va, int swapDirection){
 int
 lapa_paging(uint64 va, int swapDirection){
   uint min_counter = __INT_MAX__;
-  int min_ones_counter = __INT_MAX__, ones_counter = 0, swapIndex = -1, counterIndex = 0, index = 0;;
+  int min_ones_counter = __INT_MAX__, ones_counter = 0, swapIndex = -1, counterIndex = 0;
   struct proc *p = myproc();
   struct pageStat *ps;
 
   for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps){
-    if((ps->used && ps->onRAM) && index > USERPAGESSTART){
+    if((ps->used && ps->onRAM)){
       for(int i = 0; i < 32; ++i){
         if((ps->counter & (1 << i)))
           ++ones_counter;
@@ -546,7 +550,6 @@ lapa_paging(uint64 va, int swapDirection){
     }
     ones_counter = 0;
     ++counterIndex;
-    ++index;
   }
 
 return twoWaySwap(p,p->pages[swapIndex].va, va, swapDirection);
@@ -560,7 +563,7 @@ scfifo_paging(uint64 va, int swapDirection){
   int swapIndex = -1;
 
   for(;;){
-    for(int i = USERPAGESSTART; i< MAX_TOTAL_PAGES; ++i){
+    for(int i = 0; i< MAX_TOTAL_PAGES; ++i){
       if(p->pages[i].used && p->pages[i].onRAM){
         pte = walk(p->pagetable, p->pages[i].va, 0);
         if((*pte & PTE_U)){
@@ -896,8 +899,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   return 0;
 
  err:
-      printf("ccccccc");
-
+      // printf("ccccccc");
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
 }
