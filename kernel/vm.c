@@ -276,7 +276,7 @@ free_swap_idx(){
   struct pageStat *pages = myproc()->pages;
   for(pg = pages; pg < (pages + MAX_TOTAL_PAGES); ++pg){
     if(!pg->used){
-      printf("DISK INDEX TODISKSWAP %d, IS USED %d\n", index, pg->used);
+      // printf("DISK INDEX TODISKSWAP %d, IS USED %d\n", index, pg->used);
       return index;
     }
     ++index;  
@@ -342,18 +342,18 @@ toDisk(uint64 a, pagetable_t pagetable){
 int
 va_index(struct proc *p, uint64 va, int onRam){
   int index = -1;
-  if(!onRam){
-  printf("VA IS HERE: %p\n", va);
-  }
+  // if(!onRam){
+  // printf("VA IS HERE: %p\n", va);
+  // }
   for(int i = 0; i < MAX_TOTAL_PAGES; ++i){
-    printf("PAGE INFO:\n PAGE INDEX: %d\n PAGE USED: %d\n PAGE ON RAM: %d\n PAGE VA: %p\n", i, p->pages[i].used, p->pages[i].onRAM, p->pages[i].va);
+    // printf("PAGE INFO:\n PAGE INDEX: %d\n PAGE USED: %d\n PAGE ON RAM: %d\n PAGE VA: %p\n", i, p->pages[i].used, p->pages[i].onRAM, p->pages[i].va);
     if(p->pages[i].used && ((p->pages[i].onRAM == onRam) && (p->pages[i].va == va))){
       index = i;
       break;
    }
   }   
-  if(!onRam)
-    printf("DISK INDEX TWOWAYSWAP %d\n", index);
+  // if(!onRam)
+  //   printf("DISK INDEX TWOWAYSWAP %d\n", index);
   return index;
 }
 
@@ -390,10 +390,10 @@ void add_disk_pageStat(struct proc *p, int index, uint64 va, int offset){
   p->pages[index].offset = offset;
   p->pages[index].va = va;
   p->pages[index].onRAM = 0;
-  printf("ADD TO DISK INFO\n");
-  printf("DISK VA: %p\n", va);
-  printf("DISK OFFSET: %d\n", offset);
-  printf("DISK INDEX: %d\n", index);
+  // printf("ADD TO DISK INFO\n");
+  // printf("DISK VA: %p\n", va);
+  // printf("DISK OFFSET: %d\n", offset);
+  // printf("DISK INDEX: %d\n", index);
 
 }
 
@@ -432,7 +432,7 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA, int swapDirection)
     panic("twoWaySwap - diskIndex - should not happen");
 
   if(swapDirection == TWOWAYSWAP){
-    printf("LINE %d, VA: %p\n", __LINE__, swapInVA);
+    // printf("LINE %d, VA: %p\n", __LINE__, swapInVA);
     add_ram_pageStat(p, ramIndex, swapInVA);
 
     readFromSwapFile(p, buffer, (diskIndex * PGSIZE), PGSIZE);
@@ -466,7 +466,7 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA, int swapDirection)
   *pte &= ~PTE_V;
 
   if(swapDirection == TODISKSWAP){
-    printf("LINE %d, VA: %p\n", __LINE__, swapInVA);
+    // printf("LINE %d, VA: %p\n", __LINE__, swapInVA);
 
     add_ram_pageStat(p, ramIndex, swapInVA);
     // p->primaryMemCounter--;
@@ -497,19 +497,20 @@ void update_counter_aging(struct proc *p){
 
 int
 nfua_paging(uint64 va, int swapDirection){
-  int swapIndex = -1, counter_index = 0;
+  int swapIndex = -1, counter_index = 0, index = 0;
   uint min_counter = __INT_MAX__;
   struct proc *p = myproc();
   struct pageStat *ps;
 
   for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps){
-    if(ps->used && ps->onRAM){
+    if((ps->used && ps->onRAM) && index >= USERPAGESSTART){
       if(ps->counter < min_counter){
         min_counter = ps->counter;
         swapIndex = counter_index;
       }
     }
     ++counter_index;
+    ++index;
   }
 
   return twoWaySwap(p, p->pages[swapIndex].va, va, swapDirection);
@@ -518,14 +519,14 @@ nfua_paging(uint64 va, int swapDirection){
 int
 lapa_paging(uint64 va, int swapDirection){
   uint min_counter = __INT_MAX__;
-  int min_ones_counter = __INT_MAX__, ones_counter = 0, swapIndex = -1, counterIndex = 0;
+  int min_ones_counter = __INT_MAX__, ones_counter = 0, swapIndex = -1, counterIndex = 0, index = 0;;
   struct proc *p = myproc();
   struct pageStat *ps;
 
   for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps){
-    if(ps->used && ps->onRAM){
+    if((ps->used && ps->onRAM) && index > USERPAGESSTART){
       for(int i = 0; i < 32; ++i){
-        if(((ps->counter >> i) & 1) == 1)
+        if((ps->counter & (1 << i)))
           ++ones_counter;
       }
 
@@ -539,11 +540,11 @@ lapa_paging(uint64 va, int swapDirection){
           min_counter = ps->counter;
           swapIndex = counterIndex;
         }
-      }
-
-      ones_counter = 0;
+      }     
     }
+    ones_counter = 0;
     ++counterIndex;
+    ++index;
   }
 
 return twoWaySwap(p,p->pages[swapIndex].va, va, swapDirection);
@@ -557,7 +558,7 @@ scfifo_paging(uint64 va, int swapDirection){
   int swapIndex = -1;
 
   for(;;){
-    for(int i = 0; i< MAX_TOTAL_PAGES; ++i){
+    for(int i = USERPAGESSTART; i< MAX_TOTAL_PAGES; ++i){
       if(p->pages[i].used && p->pages[i].onRAM){
         pte = walk(p->pagetable, p->pages[i].va, 0);
         if((*pte & PTE_U)){
@@ -622,7 +623,8 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     return oldsz;
   if(PGROUNDUP(newsz-oldsz)/PGSIZE > MAX_TOTAL_PAGES - p->primaryMemCounter - p->secondaryMemCounter && p->pid > 2){
     printf("ALLOC PAGES %d\n RAM COUNT %d\n DISK COUNT %d\n MAX PAGES %d\n", PGROUNDUP(newsz-oldsz)/PGSIZE, p->primaryMemCounter, p->secondaryMemCounter, MAX_TOTAL_PAGES);
-    panic("file too big!\n");
+    printf("file too big!\n");
+    exit(-1);
   }
   // int ramIndex;
   oldsz = PGROUNDUP(oldsz);
@@ -634,13 +636,13 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
         // counter++;
         printf("RAM COUNT %d\n", p->primaryMemCounter);
         int freeIndex = free_swap_idx();
-        printf("LINE %d, VA: %p\n", __LINE__, a);
+        // printf("LINE %d, VA: %p\n", __LINE__, a);
         add_ram_pageStat(p, freeIndex, a);
         p->primaryMemCounter++;
       }
       else{
         // counter++;
-        printf("helllooooooooooooooooooooo\n");
+        // printf("helllooooooooooooooooooooo\n");
         if(p->secondaryMemCounter == MAX_PSYC_PAGES)
           panic("memory full both on ram and disk");
         replace_page(a, TODISKSWAP);

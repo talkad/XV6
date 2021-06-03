@@ -85,7 +85,7 @@ usertrap(void)
 
         }
         else{
-          // printf("she is screaming C\n");
+          printf("she is screaming C\n");
           printf("%p\n", *pte);
           printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
           printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -93,7 +93,7 @@ usertrap(void)
         }
       }
       else{
-              // printf("she is screaming D\n");
+              printf("she is screaming D\n");
 
        printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
        printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

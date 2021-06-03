@@ -541,13 +541,7 @@ scheduler(void)
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
-        c->proc = p;
-
-        #if defined(LAPA) || defined(NFUA)
-        if(p->pid >2)
-          update_counter_aging(p);
-        #endif
-        
+        c->proc = p;        
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
@@ -591,6 +585,12 @@ void
 yield(void)
 {
   struct proc *p = myproc();
+  
+  #if defined(LAPA) || defined(NFUA)
+  if(p->pid >2)
+    update_counter_aging(p);
+  #endif
+
   acquire(&p->lock);
   p->state = RUNNABLE;
   sched();

@@ -15,3 +15,4 @@
 #define MAX_TOTAL_PAGES 32
 #define TODISKSWAP 0
 #define TWOWAYSWAP 1
+#define USERPAGESSTART 3

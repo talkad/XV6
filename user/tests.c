@@ -5,6 +5,6 @@
 int
 main(int argc, char *argv[])
 {
-  malloc(4096);
+  malloc(4096*29);
   exit(0);
 }
