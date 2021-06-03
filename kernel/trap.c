@@ -74,10 +74,10 @@ usertrap(void)
       pte_t *pte = walk(p->pagetable, va_pf, 0);
       // printf("she is screaming A\n");
       if(pte){
-        // if((*pte & PTE_V) && (PTE2PA(*pte) == 0)){
-        //   panic("very interesting");
-        // }
-        // else 
+        if((*pte & PTE_V) && (PTE2PA(*pte) == 0)){
+          panic("very interesting");
+        }
+        else 
         if(!(*pte & PTE_V) && (*pte & PTE_PG)){
           //  printf("she is screaming B\n");
             printf("HERE?!?!?! VA - %p\n", va_pf);

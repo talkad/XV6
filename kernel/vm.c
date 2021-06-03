@@ -17,7 +17,6 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
-static char buffer[PGSIZE];
 // Make a direct-map page table for the kernel.
 pagetable_t
 kvmmake(void)
@@ -177,8 +176,6 @@ mappage(pagetable_t pagetable, uint64 va, uint64 pa, int perm)
     *pte = PA2PTE(pa) | perm | PTE_V;
   return 0;
 }
-
-
 
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
@@ -399,13 +396,14 @@ void add_disk_pageStat(struct proc *p, int index, uint64 va, int offset){
 
 int
 twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA, int swapDirection){
-  int ramIndex = -1, diskIndex = -1;
+  int ramIndex = -1, diskIndex = -1, diskOffset = -1;
   // printf("she is screaming E\n");
 
   pte_t *pte = walk(p->pagetable, swapOutVA, 0);
   void *pa = kalloc();
+  char *buffer = kalloc();
 
-  if(!pa)
+  if(!pa || !buffer)
     panic("no more memory bye bye");
 
   if((*pte & PTE_U)){
@@ -435,12 +433,14 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA, int swapDirection)
     // printf("LINE %d, VA: %p\n", __LINE__, swapInVA);
     add_ram_pageStat(p, ramIndex, swapInVA);
 
-    readFromSwapFile(p, buffer, (diskIndex * PGSIZE), PGSIZE);
+    diskOffset = p->pages[diskIndex].offset;
+
+    readFromSwapFile(p, buffer, diskOffset, PGSIZE);
     
     if(mappage(p->pagetable, swapInVA, (uint64)pa, PTE_W| PTE_X | PTE_R | PTE_U) == -1){
       kfree(pa);
       panic("mappage failed bye bye");
-  }
+    }
 
   memmove(pa, buffer, PGSIZE);
   
@@ -457,17 +457,19 @@ twoWaySwap(struct proc *p, uint64 swapOutVA, uint64 swapInVA, int swapDirection)
 
   pte = walk(p->pagetable, swapOutVA, 0);
 
-  writeToSwapFile(p, (void*)(PTE2PA(*pte)), (diskIndex * PGSIZE), PGSIZE);
+  writeToSwapFile(p, (void*)(PTE2PA(*pte)), ((diskOffset == -1) ? p->filesz : diskOffset), PGSIZE);
 
-  add_disk_pageStat(p, diskIndex, swapOutVA, (diskIndex * PGSIZE));
+  add_disk_pageStat(p, diskIndex, swapOutVA, ((diskOffset == -1) ? p->filesz : diskOffset));
 
   kfree((void*)(PTE2PA(*pte)));
   *pte |= PTE_PG;
   *pte &= ~PTE_V;
 
+  kfree((void*)buffer);
+
   if(swapDirection == TODISKSWAP){
     // printf("LINE %d, VA: %p\n", __LINE__, swapInVA);
-
+    p->filesz += PGSIZE;
     add_ram_pageStat(p, ramIndex, swapInVA);
     // p->primaryMemCounter--;
     p->secondaryMemCounter++;

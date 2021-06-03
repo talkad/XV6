@@ -145,6 +145,7 @@ found:
   if(p->pid > 2){
     release(&p->lock);
     createSwapFile(p);
+    p->filesz = 0;
     acquire(&p->lock);
   }
 
@@ -585,7 +586,7 @@ void
 yield(void)
 {
   struct proc *p = myproc();
-  
+
   #if defined(LAPA) || defined(NFUA)
   if(p->pid >2)
     update_counter_aging(p);
