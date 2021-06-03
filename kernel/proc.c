@@ -164,18 +164,10 @@ found:
 static void
 freeproc(struct proc *p)
 {
-  // struct pageStat *ps;
   #ifndef NONE
-  // if(p->pid > 2){
-  //   release(&p->lock);
-  //   removeSwapFile(p);
-  //   acquire(&p->lock);
-
     #ifdef SCFIFO
     p->scFIFO_time = 0;
     #endif
-  // }
-
   
   p->primaryMemCounter = 0;
   p->secondaryMemCounter = 0;
@@ -185,10 +177,9 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable){
-    // printf("aaaaaaaaaaa");
+  if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
-  }
+  
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -198,10 +189,6 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
-
-  // for(ps = p->pages; ps < &p->pages[MAX_TOTAL_PAGES]; ++ps)
-  //   ps->used = 0;
-
 }
 
 // Create a user page table for a given process,
@@ -242,13 +229,9 @@ proc_pagetable(struct proc *p)
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 { 
-  // printf("hello again\n");
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
-  // printf("general kenobi\n");
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
-  // printf("idk anymorte\n");
   uvmfree(pagetable, sz);
-  // printf("idkkkkkkkkkkkkk\n");
 }
 
 // a user program that calls exec("/init")
@@ -299,7 +282,6 @@ growproc(int n)
 
   sz = p->sz;
 
-  // #ifndef NONE
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
@@ -310,15 +292,6 @@ growproc(int n)
   }
 
   p->sz = sz;
-  // #endif
-
-  // #ifdef NONE
-  // if(n < 0){
-  //   sz = uvmdealloc(p->pagetable, sz, sz + n);
-  // }
-
-  // p->sz += n;
-  // #endif
 
   return 0;
 }

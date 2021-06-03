@@ -70,31 +70,17 @@ usertrap(void)
   #ifndef NONE
     else if(p->pid > 2 && (r_scause() == 12 || r_scause() == 13 || r_scause() == 15)){
       uint64 va_pf = PGROUNDDOWN(r_stval());
-      // printf("she is screaming A\n");
       pte_t *pte = walk(p->pagetable, va_pf, 0);
-      // printf("she is screaming A\n");
       if(pte){
-        if((*pte & PTE_V) && (PTE2PA(*pte) == 0)){
-          panic("very interesting");
-        }
-        else 
-        if(!(*pte & PTE_V) && (*pte & PTE_PG)){
-          //  printf("she is screaming B\n");
-            printf("HERE?!?!?! VA - %p\n", va_pf);
-           replace_page(va_pf, TWOWAYSWAP);
-
-        }
+        if(!(*pte & PTE_V) && (*pte & PTE_PG))
+           replace_page(va_pf, TWOWAYSWAP);        
         else{
-          printf("she is screaming C\n");
-          printf("%p\n", *pte);
           printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
           printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
           p->killed = 1;
         }
       }
       else{
-              printf("she is screaming D\n");
-
        printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
        printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
        p->killed = 1;
@@ -102,12 +88,6 @@ usertrap(void)
   } 
   #endif
 
-  // #ifdef NONE
-  // else if((r_scause() == 12 || r_scause() == 13 || r_scause() == 15)){
-  //   uint va_pf = PGROUNDDOWN(r_stval());
-  //   uvmalloc(p->pagetable, va_pf, (va_pf + PGSIZE));
-  // }
-  // #endif
    else if((which_dev = devintr()) != 0){
     // ok
   }
@@ -128,25 +108,6 @@ usertrap(void)
 
   usertrapret();
 }
-
-// int
-// toRam(uint64 va){
-
-//   uint64 pa = kalloc();
-
-//   struct pageStat *ps;
-//   for(ps = myproc()->ramPages; ps < &myproc()->ramPages[MAX_PSYC_PAGES]; ++ps){
-//     if(!ps->used){
-//       *(ps + index) = *(myproc()->swapPages + index);
-//       ps->used = 1;
-//       myproc()->swapPages[index].used = 0;
-//       myproc()->primaryMemCounter++;
-//       myproc()->secondaryMemCounter--;
-//       return 0;
-//     }
-//   }
-//   return -1;
-// }
 
 //
 // return to user space
